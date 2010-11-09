@@ -28,6 +28,7 @@
 
 #define MYSQL_CLIENT
 #undef MYSQL_SERVER
+#include <stdio.h>
 #include "client_priv.h"
 #include <my_time.h>
 /* That one is necessary for defines of OPTION_NO_FOREIGN_KEY_CHECKS etc */
@@ -44,6 +45,7 @@
 
 char server_version[SERVER_VERSION_LENGTH];
 ulong server_id = 0;
+ulong self_server_id=777777777777;
 
 // needed by net_serv.c
 ulong bytes_sent = 0L, bytes_received = 0L;
@@ -87,6 +89,10 @@ static char* pass = 0;
 static char *charset= 0;
 
 static uint verbose= 0;
+
+static FILE *npfp=NULL;
+static char *name_and_pos="/tmp/name_and_pos";
+char current_log_name[255];
 
 static ulonglong start_position, stop_position;
 #define start_position_mot ((my_off_t)start_position)
@@ -971,6 +977,29 @@ err:
   retval= ERROR_STOP;
 end:
   rec_count++;
+
+  /*
+  we need to save the logname and position.
+  */
+	static my_off_t evpos;
+	if(ev) evpos=ev->log_pos;
+	if(retval == OK_CONTINUE )
+	{
+		if(!npfp)
+		{
+			npfp=fopen(name_and_pos,"w");
+		}
+		if(!npfp)
+		{
+			perror("fopen:");
+		}
+		else
+		{
+			rewind(npfp);
+			fprintf(npfp,"%s\n",current_log_name);
+			fprintf(npfp,"%lu                      \n",(unsigned long)(evpos));
+		}	
+	}
   /*
     Destroy the log_event object. If reading from a remote host,
     set the temp_buf to NULL so that memory isn't freed twice.
@@ -1078,6 +1107,10 @@ static struct my_option my_long_options[] =
   {"server-id", OPT_SERVER_ID,
    "Extract only binlog entries created by the server having the given id.",
    &server_id, &server_id, 0, GET_ULONG,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"self-server-id", OPT_SERVER_ID,
+   "The fake slave server id.",
+   &self_server_id, &self_server_id, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"set-charset", OPT_SET_CHARSET,
    "Add 'SET NAMES character_set' to the output.", &charset,
@@ -1573,7 +1606,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
     DBUG_RETURN(ERROR_STOP);
   }
   logname_len = (uint) tlen;
-  int4store(buf + 6, 0);
+  int4store(buf + 6, self_server_id);
   memcpy(buf + 10, logname, logname_len);
   if (simple_command(mysql, COM_BINLOG_DUMP, buf, logname_len + 10, 1))
   {
@@ -1625,6 +1658,8 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
       if (type == ROTATE_EVENT)
       {
         Rotate_log_event *rev= (Rotate_log_event *)ev;
+        memset(current_log_name, 0, 255);
+        strncpy(current_log_name, rev->new_log_ident, logname_len);
         /*
           If this is a fake Rotate event, and not about our log, we can stop
           transfer. If this a real Rotate event (so it's not about our log,
@@ -2010,6 +2045,7 @@ end:
 
 int main(int argc, char** argv)
 {
+  setvbuf(stdout, NULL, _IONBF, 0);
   char **defaults_argv;
   Exit_status retval= OK_CONTINUE;
   ulonglong save_stop_position;
