@@ -1,0 +1,4 @@
+编译方法：使用mysqlbinlog.cc覆盖源码client目录中的源代码，之后执行正常编译
+
+注意：1，修改sql/log_event.cc:2990，注释掉for mysql client注释下面的语句。
+      2, grant SUPER on mac.* to repl@'192.168.46.%'

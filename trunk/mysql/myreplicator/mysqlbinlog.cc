@@ -52,6 +52,7 @@ ulong server_id = 0;
 ulong self_server_id = 777777777;
 char *conf_file = (char*)"/tmp/replicator.conf";
 char *rpl_fifo = (char*)"/tmp/rpl.fifo";
+int rpl_p[2]; //pipe for sql
 static FILE *rf;
 static FILE *conf_file_fd;
 static FILE *npfp = NULL;
@@ -2084,6 +2085,7 @@ end:
   return retval;
 }
 
+//my add
 size_t
 strlcpy(char *dst, const char *src, size_t siz)
 {
@@ -2110,6 +2112,225 @@ strlcpy(char *dst, const char *src, size_t siz)
 	return(s - src - 1);	/* count does not include NUL */
 }
 
+/*libmysqlclient wrapped*/
+#include <mysql.h>
+#include <errmsg.h>
+#include <mysqld_error.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+#define MYSQL_CONN_NAME_LEN		128
+#define MYSQL_CONN_TIMEOUT		3
+#define MYSQL_CHARSET_NAME		"utf8"
+#define MS_CONN_RETRY			0x1
+
+#define mysql_get_handle(handle)		(handle->msp)
+#define mysql_get_host(handle)			(handle->db_host)
+#define mysql_get_user(handle)			(handle->db_user)
+#define mysql_get_pass(handle)			(handle->db_pass)
+#define mysql_get_name(handle)			(handle->db_name)
+#define mysql_get_port(handle)			(handle->db_port)
+
+typedef struct _mysql_handle
+{
+    MYSQL *msp;
+    char db_host[MYSQL_CONN_NAME_LEN + 1];
+    char db_user[MYSQL_CONN_NAME_LEN + 1];
+    char db_pass[MYSQL_CONN_NAME_LEN + 1];
+    char db_name[MYSQL_CONN_NAME_LEN + 1];
+    unsigned int db_port;
+} MYSQL_CONN;
+
+int
+__mysql_conn(MYSQL_CONN *handle)
+{
+	MYSQL *retmysql;
+	MYSQL *msp;
+	int retval;
+	uint32_t timeout = MYSQL_CONN_TIMEOUT;
+	
+	if (handle == NULL)
+		return -1;
+		
+	/* init mysql lib */
+	msp = mysql_init(NULL);
+	
+	if (msp == NULL)
+		return -1;
+		
+	retval = mysql_options(msp, MYSQL_OPT_CONNECT_TIMEOUT, (const char *)(&timeout));
+
+	if (retval != 0) {
+		error("Failed to set option: %s", mysql_error(msp));
+		mysql_close(msp);
+		return -1;
+	}
+	
+	retval = mysql_options(msp, MYSQL_SET_CHARSET_NAME, MYSQL_CHARSET_NAME); 
+	
+	if (retval != 0) {
+		error("Failed to set option: %s", mysql_error(msp));
+		mysql_close(msp);
+		return -1;
+	}
+	
+	handle->msp = msp;
+	
+	retmysql = mysql_real_connect(
+		handle->msp, 
+		handle->db_host, 
+		handle->db_user,      
+		handle->db_pass, 
+		handle->db_name, 
+		handle->db_port,
+		NULL, CLIENT_INTERACTIVE | CLIENT_MULTI_STATEMENTS);
+		
+	if (retmysql == NULL) {
+		error("Failed to connect: %s\n", mysql_error(handle->msp));
+		mysql_close(handle->msp);
+		handle->msp = NULL;
+		return -2;
+	}
+	
+	if (mysql_set_character_set(msp, "utf8") == 0) {
+		error("New client character set: %s\n", mysql_character_set_name(msp));
+	}
+	else {
+		error("Character set: %s failed.\n", mysql_character_set_name(msp));
+	}
+	
+	mysql_autocommit(handle->msp, 1);
+
+	return 0;
+}
+
+
+MYSQL_CONN *
+__mysql_init(const char *db_host, const char *db_user, const char *db_pass, 
+		   const char *db_name, unsigned int db_port)
+{
+	MYSQL_CONN *handle;
+	
+	if (db_host == NULL || db_user == NULL || db_pass == NULL || 
+	    db_name == NULL) 
+	{
+		return NULL;
+	}
+	
+	/* create a mysql conn handle */
+	handle = (MYSQL_CONN *)calloc(1, sizeof(MYSQL_CONN));
+	
+	/* save the mysql information */
+	strncpy(handle->db_host, db_host, MYSQL_CONN_NAME_LEN);
+	strncpy(handle->db_user, db_user, MYSQL_CONN_NAME_LEN);
+	strncpy(handle->db_pass, db_pass, MYSQL_CONN_NAME_LEN);
+	strncpy(handle->db_name, db_name, MYSQL_CONN_NAME_LEN);
+	handle->db_port = db_port;
+	
+	
+	/* real connect to mysql server */
+	if (__mysql_conn(handle) != 0) {
+		return NULL;
+	}
+	
+	return handle;
+}
+
+int
+__mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
+{
+	int retval = 0;
+	int	err;
+	int	retry_flag = 0;
+	
+	if (handle == NULL || sql_str == NULL)
+		return -1;
+		
+	if (handle->msp == NULL) {
+		if (__mysql_conn(handle) != 0) {
+			error("__mysql_store_result: MySQL can not be reconnected!.\n");
+			return -1;
+		}
+	}
+
+		
+	for( ; ; ) {
+		retval = mysql_real_query(mysql_get_handle(handle), sql_str, sql_len);
+
+		if (retval != 0) {
+			error("mysql query error:[%d]:[%s]\n", retval, mysql_error(mysql_get_handle(handle)));
+			err = mysql_errno(mysql_get_handle(handle));
+			
+            /* syntax error */
+            if (err >= ER_ERROR_FIRST && err <= ER_ERROR_LAST)
+			{
+				if (err == ER_SYNTAX_ERROR)
+				{
+					error("SQL syntax error.\n");
+					do{}while(0);
+				}
+				return err;	
+			}
+            /* connection error */
+            else if (err == CR_SERVER_GONE_ERROR || err == CR_SERVER_LOST) 
+            {		
+				if ((options & MS_CONN_RETRY) != MS_CONN_RETRY)
+					retry_flag = 1;
+				
+				/* Disconnected again, never retry */
+				if (retry_flag) break;
+
+                retry_flag = 1;
+				printf("Try to reconnect to mysql ...\n");
+				
+				/* close for a new connection */
+				mysql_close(handle->msp);
+
+                if (__mysql_conn(handle) != 0) {
+					error("Fatal error: MySQL can not be reconnected!.\n");
+					handle->msp = NULL;
+					
+					return -1;
+                }
+                else {
+					continue;
+                }
+			} 
+            /* other fatal error */
+            else {
+				error("Mysql Unknow error. mysql failed.\n");
+				return -1;
+			}
+		} 
+        else {
+			break;
+		}
+	}
+
+	return 0;
+}
+MYSQL_CONN *slave_h = NULL;
+int SQL_process() {
+	int re;
+	char buf[1024] = {0};
+
+	slave_h = __mysql_init(slave_host, slave_user, slave_pass, slave_db_name, slave_port);
+	if (NULL == slave_h) {
+		error("failed to create mysql handler.");
+		return -1;
+	}
+
+	for ( ;; ) {
+		fgets(buf, sizeof(buf), rf);
+		buf[strlen(buf) - 1] = '\0';
+		error("********************%s", buf);
+		re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
+		if (re != 0) {
+			error("__mysql_query ERROR!");
+		}
+	}
+}
+
 int main(int argc, char** argv)
 {
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -2134,6 +2355,11 @@ int main(int argc, char** argv)
   }
 	//my add
 	char buf[1024] = {0};
+	result_file = fopen("/dev/null", "w");
+	if (NULL == result_file) {
+		perror("open /dev/null faild");
+		exit(1);
+	}
 	if (access(rpl_fifo, F_OK)) {
 		if (mkfifo(rpl_fifo, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP) != 0) {
 			perror(strerror(errno));	
@@ -2145,8 +2371,8 @@ int main(int argc, char** argv)
 		perror("open rpl.fifo faild");
 		exit(1);
 	}
-	result_file = fopen("/dev/null", "w");
 	query_result_file = fopen(rpl_fifo, "w");
+	//query_result_file = stdout;
 	if (access(conf_file, F_OK)) {
 		conf_file_fd = fopen(conf_file, "w+");	
 		if (NULL == conf_file_fd) {
@@ -2202,57 +2428,11 @@ int main(int argc, char** argv)
 	}
 	//my add
 	pid_t pid = fork();
-	if (pid == 0) {
-		MYSQL *my_h = NULL;
-		MYSQL *retmysql = NULL;
-		my_h = mysql_init(NULL);
-		if (my_h == NULL) {
-			exit(1);
-		}
-		#define MYSQL_CONN_TIMEOUT	5	
-		#define MYSQL_CHARSET_NAME		"utf8"
-		uint32_t timeout = MYSQL_CONN_TIMEOUT;
-		int re = mysql_options(my_h, MYSQL_OPT_CONNECT_TIMEOUT, 
-			(const char *)(&timeout));
-		if (re != 0) {
-			mysql_close(my_h);
-			exit(1);
-		}	
-		re = mysql_options(my_h, MYSQL_SET_CHARSET_NAME, MYSQL_CHARSET_NAME); 
-		if (re != 0) {
-			mysql_close(my_h);
-			exit(1);
-		}	
-		retmysql = mysql_real_connect(
-			my_h, 
-			slave_host, 
-			slave_user,      
-			slave_pass, 
-			slave_db_name, 
-			slave_port,
-			NULL, CLIENT_INTERACTIVE | CLIENT_MULTI_STATEMENTS);
-		
-		if (retmysql == NULL) {
-			error("Failed to connect: %s\n", mysql_error(my_h));
-			mysql_close(my_h);
-			exit(2);
-		}
-		if (mysql_set_character_set(my_h, "utf8") == 0) {
-			error("New client character set: %s\n",
-			mysql_character_set_name(my_h));
-		} else {
-			error("Character set: %s failed.\n", mysql_character_set_name(my_h));
-		}
-		mysql_autocommit(my_h, 1);
-		for ( ;; ) {
-			fgets(buf, sizeof(buf), rf);
-			//error("********************%s", buf);
-			buf[strlen(buf) - 1] = '\0';
-			re = mysql_real_query(my_h, buf, strlen(buf));
-			if (re != 0) {
-				error("mysql query error:[%d]:[%s]\n", retval, mysql_error(my_h));
-			}
-		}
+	if (pid < 0) {
+		perror("fork faild!");
+		exit(0);
+	} else if (pid == 0) { //child process
+		SQL_process();
 	}
 
   if (opt_base64_output_mode == BASE64_OUTPUT_UNSPEC)
