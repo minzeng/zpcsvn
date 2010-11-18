@@ -2,3 +2,4 @@
 
 注意：1，修改sql/log_event.cc:2990，注释掉for mysql client注释下面的语句。
       2, grant SUPER on mac.* to repl@'192.168.46.%'
+      3, 注意一条语句中带\n的情况

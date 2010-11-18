@@ -37,6 +37,7 @@
 //my add
 #include <stdio.h>
 #include <inttypes.h>
+#include <signal.h>
 
 #define BIN_LOG_HEADER_SIZE	4
 #define PROBE_HEADER_LEN	(EVENT_LEN_OFFSET+4)
@@ -49,24 +50,26 @@ char server_version[SERVER_VERSION_LENGTH];
 ulong server_id = 0;
 
 //my add
+#define QUERY_STR_LEN (16*1024*1024) 
 ulong self_server_id = 777777777;
-char *conf_file = (char*)"/tmp/replicator.conf";
-char *rpl_fifo = (char*)"/tmp/rpl.fifo";
-int rpl_p[2]; //pipe for sql
+char *conf_file = NULL;//(char*)"/tmp/replicator.conf";
+//char *rpl_fifo = (char*)"/tmp/rpl.fifo";
+//int rpl_p[2]; //pipe for sql
 static FILE *rf;
 static FILE *conf_file_fd;
-static FILE *npfp = NULL;
-static char *name_and_pos = (char*)"/tmp/name_and_pos";
+//static FILE *npfp = NULL;
+//static char *name_and_pos = (char*)"/tmp/name_and_pos";
 char current_log_name[255];
 char master_host[256];
 char master_user[256];
 char master_pass[256];
-char *slave_host = NULL;//(char*)"192.168.46.128";
-char *slave_user = NULL;//(char*)"repl";      
-char *slave_pass = NULL;//(char*)"123qwe"; 
-char *slave_db_name = NULL;//(char*)"mac"; 
-int slave_port = 3307;
+char *slave_host = NULL;
+char *slave_user = NULL;      
+char *slave_pass = NULL; 
+char *slave_db_name = NULL; 
+int slave_port = 3306;
 static FILE *query_result_file;
+bool is_daemonize = false;
 
 // needed by net_serv.c
 ulong bytes_sent = 0L, bytes_received = 0L;
@@ -79,7 +82,7 @@ static FILE *result_file;
 #ifndef DBUG_OFF
 static const char* default_dbug_option = "d:t:o,/tmp/mysqlbinlog.trace";
 #endif
-static const char *load_default_groups[]= { "mysqlbinlog","client",0 };
+static const char *load_default_groups[]= { "mysqlbinlog","myreplicator",0 };
 
 static void error(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
 static void warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
@@ -753,9 +756,13 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
 
     switch (ev_type) {
     case QUERY_EVENT:
-      if (!((Query_log_event*)ev)->is_trans_keyword() &&
-          shall_skip_database(((Query_log_event*)ev)->db))
+      /*if (!((Query_log_event*)ev)->is_trans_keyword() &&
+          shall_skip_database(((Query_log_event*)ev)->db)) {
         goto end;
+	*/
+	if (!shall_skip_database(((Query_log_event*)ev)->db)) {
+		goto end;
+	}
       if (opt_base64_output_mode == BASE64_OUTPUT_ALWAYS)
       {
         if ((retval= write_event_header_and_base64(ev, result_file,
@@ -990,15 +997,15 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
 		fseek(conf_file_fd, 0, SEEK_SET);
 		fprintf(conf_file_fd, "%s\n", logname);	
 		if (ev->log_pos == 0) {
-			fprintf(conf_file_fd, "%ju\n", start_position);	
+			fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);	
 		} else {
-			fprintf(conf_file_fd, "%ju\n", ev->log_pos);	
+			fprintf(conf_file_fd, "%ju\n", (uintmax_t)ev->log_pos);	
 		}
 		fprintf(conf_file_fd, "%s\n", host);	
 		fprintf(conf_file_fd, "%s\n", user);	
 		fprintf(conf_file_fd, "%s\n", pass);	
 		fprintf(conf_file_fd, "%d\n", port);	
-		fprintf(conf_file_fd, "%lu\n", self_server_id);	
+		fprintf(conf_file_fd, "%ju\n", (uintmax_t)self_server_id);	
 		fflush(conf_file_fd);
     }
   }
@@ -1013,7 +1020,7 @@ end:
   /*
   we need to save the logname and position.
   */
-	static my_off_t evpos;
+	/*static my_off_t evpos;
 	if(ev) evpos=ev->log_pos;
 	if(retval == OK_CONTINUE )
 	{
@@ -1031,7 +1038,7 @@ end:
 			fprintf(npfp,"%s\n",current_log_name);
 			fprintf(npfp,"%lu                      \n",(unsigned long)(evpos));
 		}	
-	}
+	}*/
   /*
     Destroy the log_event object. If reading from a remote host,
     set the temp_buf to NULL so that memory isn't freed twice.
@@ -1155,6 +1162,11 @@ static struct my_option my_long_options[] =
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"slave-port", 904, "slave port.", &slave_port, &slave_port, 0, GET_INT,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"relay-info", 905, "replicator conf", &conf_file, &conf_file,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"daemon", 906, "run as daemon.",
+   &is_daemonize, &is_daemonize, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
+   0, 0},
 
   {"set-charset", OPT_SET_CHARSET,
    "Add 'SET NAMES character_set' to the output.", &charset,
@@ -1292,10 +1304,10 @@ static void warning(const char *format,...)
 */
 static void cleanup()
 {
-  my_free(pass,MYF(MY_ALLOW_ZERO_PTR));
+  //my_free(pass,MYF(MY_ALLOW_ZERO_PTR));
   my_free((char*) database, MYF(MY_ALLOW_ZERO_PTR));
-  my_free((char*) host, MYF(MY_ALLOW_ZERO_PTR));
-  my_free((char*) user, MYF(MY_ALLOW_ZERO_PTR));
+  //my_free((char*) host, MYF(MY_ALLOW_ZERO_PTR));
+  //my_free((char*) user, MYF(MY_ALLOW_ZERO_PTR));
   my_free((char*) dirname_for_local_load, MYF(MY_ALLOW_ZERO_PTR));
 
   delete glob_description_event;
@@ -1475,7 +1487,8 @@ static Exit_status safe_connect()
 #endif
   if (!mysql_real_connect(mysql, host, user, pass, 0, port, sock, 0))
   {
-    error("Failed on connect: %s", mysql_error(mysql));
+	error("connect to master.[%s:%d] user: %s", host, port, user);
+    error("Failed on connect to master: %s", mysql_error(mysql));
     return ERROR_STOP;
   }
   mysql->reconnect= 1;
@@ -2140,7 +2153,7 @@ typedef struct _mysql_handle
     char db_name[MYSQL_CONN_NAME_LEN + 1];
     unsigned int db_port;
 } MYSQL_CONN;
-
+MYSQL_CONN *slave_h = NULL;
 int
 __mysql_conn(MYSQL_CONN *handle)
 {
@@ -2181,19 +2194,19 @@ __mysql_conn(MYSQL_CONN *handle)
 		handle->db_host, 
 		handle->db_user,      
 		handle->db_pass, 
-		handle->db_name, 
+		NULL, 
 		handle->db_port,
 		NULL, CLIENT_INTERACTIVE | CLIENT_MULTI_STATEMENTS);
 		
 	if (retmysql == NULL) {
-		error("Failed to connect: %s\n", mysql_error(handle->msp));
+		error("Failed to connect: %s", mysql_error(handle->msp));
 		mysql_close(handle->msp);
 		handle->msp = NULL;
 		return -2;
 	}
 	
 	if (mysql_set_character_set(msp, "utf8") == 0) {
-		error("New client character set: %s\n", mysql_character_set_name(msp));
+		printf("New client character set: %s\n", mysql_character_set_name(msp));
 	}
 	else {
 		error("Character set: %s failed.\n", mysql_character_set_name(msp));
@@ -2211,8 +2224,7 @@ __mysql_init(const char *db_host, const char *db_user, const char *db_pass,
 {
 	MYSQL_CONN *handle;
 	
-	if (db_host == NULL || db_user == NULL || db_pass == NULL || 
-	    db_name == NULL) 
+	if (db_host == NULL || db_user == NULL || db_pass == NULL) 
 	{
 		return NULL;
 	}
@@ -2224,7 +2236,7 @@ __mysql_init(const char *db_host, const char *db_user, const char *db_pass,
 	strncpy(handle->db_host, db_host, MYSQL_CONN_NAME_LEN);
 	strncpy(handle->db_user, db_user, MYSQL_CONN_NAME_LEN);
 	strncpy(handle->db_pass, db_pass, MYSQL_CONN_NAME_LEN);
-	strncpy(handle->db_name, db_name, MYSQL_CONN_NAME_LEN);
+	//strncpy(handle->db_name, db_name, MYSQL_CONN_NAME_LEN);
 	handle->db_port = db_port;
 	
 	
@@ -2258,7 +2270,7 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 		retval = mysql_real_query(mysql_get_handle(handle), sql_str, sql_len);
 
 		if (retval != 0) {
-			error("mysql query error:[%d]:[%s]\n", retval, mysql_error(mysql_get_handle(handle)));
+			error("mysql query error:[%d]:[%s]", retval, mysql_error(mysql_get_handle(handle)));
 			err = mysql_errno(mysql_get_handle(handle));
 			
             /* syntax error */
@@ -2309,25 +2321,100 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 
 	return 0;
 }
-MYSQL_CONN *slave_h = NULL;
 int SQL_process() {
 	int re;
-	char buf[1024] = {0};
+	char *buf = NULL;
 
-	slave_h = __mysql_init(slave_host, slave_user, slave_pass, slave_db_name, slave_port);
+	buf = (char*)calloc(1, QUERY_STR_LEN + 1);
+	if (NULL == buf) {
+		perror("calloc buf faild!");	
+		return -1;
+	}
+	buf[QUERY_STR_LEN] = '\0';
+	printf("connect to slave.[%s:%d] user: %s\n", 
+		slave_host, slave_port, slave_user);
+	slave_h = __mysql_init(slave_host, slave_user, slave_pass, NULL, slave_port);
 	if (NULL == slave_h) {
 		error("failed to create mysql handler.");
 		return -1;
 	}
 
 	for ( ;; ) {
-		fgets(buf, sizeof(buf), rf);
+		fgets(buf, QUERY_STR_LEN, rf);
 		buf[strlen(buf) - 1] = '\0';
-		error("********************%s", buf);
-		re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
-		if (re != 0) {
-			error("__mysql_query ERROR!");
+		//error("********************%s", buf);
+		for ( ;; ) {
+			re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
+			if (re != 0) {
+				error("__mysql_query ERROR! sql=%s", buf);
+				__mysql_query(slave_h, "use attention", sizeof("use attention")-1, MS_CONN_RETRY);
+			} else {
+				break;//success	
+			}
 		}
+	}
+	free(buf);
+}
+
+int
+daemonize(int nochdir, int noclose)
+{
+	struct sigaction osa, sa;
+	int fd;
+	pid_t newgrp;
+	int oerrno;
+	int osa_ok;
+
+	/* A SIGHUP may be thrown when the parent exits below. */
+	sigemptyset(&sa.sa_mask);
+	sa.sa_handler = SIG_IGN;
+	sa.sa_flags = 0;
+	osa_ok = sigaction(SIGHUP, &sa, &osa);
+
+	switch (fork()) {
+	case -1:
+		return (-1);
+	case 0:
+		break;
+	default:
+		exit(0);
+	}
+
+	newgrp = setsid();
+	oerrno = errno;
+	if (osa_ok != -1)
+		sigaction(SIGHUP, &osa, NULL);
+
+	if (newgrp == -1) {
+		errno = oerrno;
+		return (-1);
+	}
+
+	if (!nochdir) {
+		(void)chdir("/");
+	}
+
+	if (!noclose && (fd = open("/dev/null", O_RDWR, 0)) != -1) {
+		(void)dup2(fd, STDIN_FILENO);
+		(void)dup2(fd, STDOUT_FILENO);
+		(void)dup2(fd, STDERR_FILENO);
+		if (fd > 2) {
+			(void)close(fd);
+		}
+	}
+	return (0);
+}
+
+void killmain(int sig) {
+	error("main process exit");
+	exit(1);
+}
+
+void rmfifo() {
+	char buf[1024] = {0};
+	snprintf(buf, 1024, "%s.fifo", conf_file);
+	if (remove(buf) != 0) {
+		error("remove %s faild!", buf);
 	}
 }
 
@@ -2354,26 +2441,37 @@ int main(int argc, char** argv)
     exit(1);
   }
 	//my add
+	signal(SIGCHLD, killmain);
 	char buf[1024] = {0};
 	result_file = fopen("/dev/null", "w");
 	if (NULL == result_file) {
 		perror("open /dev/null faild");
 		exit(1);
 	}
-	if (access(rpl_fifo, F_OK)) {
-		if (mkfifo(rpl_fifo, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP) != 0) {
+	snprintf(buf, 1024, "%s.fifo", conf_file);
+	if (access(buf, F_OK)) {
+		if (mkfifo(buf, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP) != 0) {
 			perror(strerror(errno));	
 			exit(1);
 		}
 	}
-	rf = fopen(rpl_fifo, "r+");
-	if (NULL == rf) {
-		perror("open rpl.fifo faild");
+	if (atexit(rmfifo) != 0) {
+		error("can't register rmfifo!");
 		exit(1);
 	}
-	query_result_file = fopen(rpl_fifo, "w");
+	rf = fopen(buf, "r+");
+	if (NULL == rf) {
+		perror("open fifo file faild");
+		exit(1);
+	}
+	query_result_file = fopen(buf, "w");
 	//query_result_file = stdout;
+	if (NULL == conf_file) {
+		error("conf arg required!");	
+		exit(1);
+	}
 	if (access(conf_file, F_OK)) {
+		printf("create relay info file[%s}\n", conf_file);	
 		conf_file_fd = fopen(conf_file, "w+");	
 		if (NULL == conf_file_fd) {
 			perror(strerror(errno));	
@@ -2381,7 +2479,7 @@ int main(int argc, char** argv)
 		}
 		fprintf(conf_file_fd, "%s\n", *argv);	
 		strlcpy(current_log_name, *argv++, sizeof(current_log_name));
-		fprintf(conf_file_fd, "%ju\n", start_position);	
+		fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);	
 		fprintf(conf_file_fd, "%s\n", host);	
 		fprintf(conf_file_fd, "%s\n", user);	
 		fprintf(conf_file_fd, "%s\n", pass);	
@@ -2389,50 +2487,63 @@ int main(int argc, char** argv)
 		fprintf(conf_file_fd, "%lu\n", self_server_id);	
 		fflush(conf_file_fd);
 	} else { // file exists
-		error("read conf\n");	
+		printf("read relay info file[%s]\n", conf_file);	
 		conf_file_fd = fopen(conf_file, "r+");	
 		if (NULL == conf_file_fd) {
 			perror(strerror(errno));	
 		}
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("log name: %s\n", buf);
 		strlcpy(current_log_name, buf, sizeof(current_log_name));
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("position: %s\n", buf);
 		start_position = (ulonglong)strtoumax(buf, NULL, 10);
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("master host: %s\n", buf);
 		strlcpy(master_host, buf, sizeof(master_host));
 		host = master_host;
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("master user: %s\n", buf);
 		strlcpy(master_user, buf, sizeof(master_user));
 		user = master_user;
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("master pass: %s\n", buf);
 		strlcpy(master_pass, buf, sizeof(master_pass));
 		pass = master_pass;
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("master port: %s\n", buf);
 		port = (int)strtoumax(buf, NULL, 10);
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
-		error(buf);
+		//printf("self server id: %s\n", buf);
 		self_server_id = (int)strtoumax(buf, NULL, 10);
+		//printf("\n");
 	}
 	//my add
+		printf("log name: %s\n", current_log_name);
+		printf("position: %ju\n", (uintmax_t)start_position);
+		printf("master host: %s\n", host);
+		printf("master user: %s\n", user);
+		printf("master pass: %s\n", pass);
+		printf("master port: %ju\n", (uintmax_t)port);
+		printf("self server id: %ju\n", (uintmax_t)self_server_id);
+		printf("\n");
+	if (is_daemonize) {
+		daemonize(1, 0);
+	}
 	pid_t pid = fork();
 	if (pid < 0) {
 		perror("fork faild!");
 		exit(0);
 	} else if (pid == 0) { //child process
 		SQL_process();
+		exit(1);
 	}
 
   if (opt_base64_output_mode == BASE64_OUTPUT_UNSPEC)
@@ -2489,8 +2600,9 @@ int main(int argc, char** argv)
     // For next log, --start-position does not apply
     start_position= BIN_LOG_HEADER_SIZE;
   }
-
-
+	//my add
+	printf("kill sql process.[%d]\n", (int)pid);
+	kill(pid, SIGKILL);
 
   /*
     Issue a ROLLBACK in case the last printed binlog was crashed and had half
