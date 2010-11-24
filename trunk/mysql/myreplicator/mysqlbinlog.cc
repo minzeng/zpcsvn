@@ -993,7 +993,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
         base64 format requires a FD event to be safe, so if no FD
         event has been printed, we give an error.  Except if user
         passed --short-form, because --short-form disables printing
-       D_EVENTrow events.
+        row events.
       */
       if (!print_event_info->printed_fd_event && !short_form)
       {
