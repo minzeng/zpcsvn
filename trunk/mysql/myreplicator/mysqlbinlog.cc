@@ -38,6 +38,8 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <signal.h>
+#include <pthread.h>
+#include "queue.h"
 
 #define BIN_LOG_HEADER_SIZE	4
 #define PROBE_HEADER_LEN	(EVENT_LEN_OFFSET+4)
@@ -59,7 +61,7 @@ static FILE *rf;
 static FILE *conf_file_fd;
 //static FILE *npfp = NULL;
 //static char *name_and_pos = (char*)"/tmp/name_and_pos";
-char current_log_name[255];
+char current_log_name[_POSIX_PATH_MAX + 1];
 char master_host[256];
 char master_user[256];
 char master_pass[256];
@@ -70,6 +72,16 @@ char *slave_db_name = NULL;
 int slave_port = 3306;
 static FILE *query_result_file;
 bool is_daemonize = false;
+/* event queue */
+struct EVENT_ITEM {
+	void *e;
+	TAILQ_ENTRY(EVENT_ITEM) entries; 
+};
+TAILQ_HEAD(,EVENT_ITEM) event_q_head;
+pthread_mutex_t q_lock = PTHREAD_MUTEX_INITIALIZER;
+uintmax_t qs = 0;
+void enqueue(void *);
+void *dequeue();
 
 // needed by net_serv.c
 ulong bytes_sent = 0L, bytes_received = 0L;
@@ -757,7 +769,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
     switch (ev_type) {
     case QUERY_EVENT:
       /*if (!((Query_log_event*)ev)->is_trans_keyword() &&
-          shall_skip_database(((Query_log_event*)ev)->db)) {
+          shall_skip_database(((Query_log_event*)ev)->db)) 
         goto end;
 	*/
 	if (!shall_skip_database(((Query_log_event*)ev)->db)) {
@@ -770,9 +782,19 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
             OK_CONTINUE)
           goto end;
       }
-      else
-        ev->print(query_result_file, print_event_info);
+      else {
+        ev->print(result_file, print_event_info);
+		enqueue(ev);
+		ev = 0;
+	  }
       break;
+	case XID_EVENT:
+	case ROTATE_EVENT: {
+		ev->print(result_file, print_event_info);
+		enqueue(ev);
+		ev = 0;
+		break;
+	}
 
     case CREATE_FILE_EVENT:
     {
@@ -971,7 +993,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
         base64 format requires a FD event to be safe, so if no FD
         event has been printed, we give an error.  Except if user
         passed --short-form, because --short-form disables printing
-        row events.
+       D_EVENTrow events.
       */
       if (!print_event_info->printed_fd_event && !short_form)
       {
@@ -991,22 +1013,7 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
       /* FALL THROUGH */
     }
     default:
-		//my add
-		ev->print(query_result_file, print_event_info);
-		fflush(query_result_file);
-		fseek(conf_file_fd, 0, SEEK_SET);
-		fprintf(conf_file_fd, "%s\n", logname);	
-		if (ev->log_pos == 0) {
-			fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);	
-		} else {
-			fprintf(conf_file_fd, "%ju\n", (uintmax_t)ev->log_pos);	
-		}
-		fprintf(conf_file_fd, "%s\n", host);	
-		fprintf(conf_file_fd, "%s\n", user);	
-		fprintf(conf_file_fd, "%s\n", pass);	
-		fprintf(conf_file_fd, "%d\n", port);	
-		fprintf(conf_file_fd, "%ju\n", (uintmax_t)self_server_id);	
-		fflush(conf_file_fd);
+		ev->print(result_file, print_event_info);
     }
   }
 
@@ -1016,29 +1023,6 @@ err:
   retval= ERROR_STOP;
 end:
   rec_count++;
-
-  /*
-  we need to save the logname and position.
-  */
-	/*static my_off_t evpos;
-	if(ev) evpos=ev->log_pos;
-	if(retval == OK_CONTINUE )
-	{
-		if(!npfp)
-		{
-			npfp=fopen(name_and_pos,"w");
-		}
-		if(!npfp)
-		{
-			perror("fopen:");
-		}
-		else
-		{
-			rewind(npfp);
-			fprintf(npfp,"%s\n",current_log_name);
-			fprintf(npfp,"%lu                      \n",(unsigned long)(evpos));
-		}	
-	}*/
   /*
     Destroy the log_event object. If reading from a remote host,
     set the temp_buf to NULL so that memory isn't freed twice.
@@ -1047,7 +1031,7 @@ end:
   {
     if (remote_opt)
       ev->temp_buf= 0;
-    if (destroy_evt) /* destroy it later if not set (ignored table map) */
+    if (destroy_evt)
       delete ev;
   }
   DBUG_RETURN(retval);
@@ -1509,28 +1493,29 @@ static Exit_status safe_connect()
   @retval OK_STOP No error, but the end of the specified range of
   events to process has been reached and the program should terminate.
 */
+//PRINT_EVENT_INFO print_event_info_s;
 static Exit_status dump_log_entries(const char* logname)
 {
   Exit_status rc;
-  PRINT_EVENT_INFO print_event_info;
+  PRINT_EVENT_INFO print_event_info_s;
 
-  if (!print_event_info.init_ok())
+  if (!print_event_info_s.init_ok())
     return ERROR_STOP;
   /*
      Set safe delimiter, to dump things
      like CREATE PROCEDURE safely
   */
   fprintf(result_file, "DELIMITER /*!*/;\n");
-  strmov(print_event_info.delimiter, "/*!*/;");
+  strmov(print_event_info_s.delimiter, "/*!*/;");
   
-  print_event_info.verbose= short_form ? 0 : verbose;
+  print_event_info_s.verbose= short_form ? 0 : verbose;
 
-  rc= (remote_opt ? dump_remote_log_entries(&print_event_info, logname) :
-       dump_local_log_entries(&print_event_info, logname));
+  rc= (remote_opt ? dump_remote_log_entries(&print_event_info_s, logname) :
+       dump_local_log_entries(&print_event_info_s, logname));
 
   /* Set delimiter back to semicolon */
   fprintf(result_file, "DELIMITER ;\n");
-  strmov(print_event_info.delimiter, ";");
+  strmov(print_event_info_s.delimiter, ";");
   return rc;
 }
 
@@ -1714,8 +1699,8 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
       if (type == ROTATE_EVENT)
       {
         Rotate_log_event *rev= (Rotate_log_event *)ev;
-        memset(current_log_name, 0, 255);
-        strncpy(current_log_name, rev->new_log_ident, logname_len);
+        //memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
+        //strncpy(current_log_name, rev->new_log_ident, logname_len);
         /*
           If this is a fake Rotate event, and not about our log, we can stop
           transfer. If this a real Rotate event (so it's not about our log,
@@ -2197,6 +2182,7 @@ __mysql_conn(MYSQL_CONN *handle)
 		NULL, 
 		handle->db_port,
 		NULL, CLIENT_INTERACTIVE | CLIENT_MULTI_STATEMENTS);
+	mysql_set_server_option(msp, MYSQL_OPTION_MULTI_STATEMENTS_ON);
 		
 	if (retmysql == NULL) {
 		error("Failed to connect: %s", mysql_error(handle->msp));
@@ -2256,12 +2242,12 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 	int	retry_flag = 0;
 	
 	if (handle == NULL || sql_str == NULL)
-		return -1;
+		return(-1);
 		
 	if (handle->msp == NULL) {
 		if (__mysql_conn(handle) != 0) {
 			error("__mysql_store_result: MySQL can not be reconnected!.\n");
-			return -1;
+			return(-1);
 		}
 	}
 
@@ -2281,7 +2267,7 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 					error("SQL syntax error.\n");
 					do{}while(0);
 				}
-				return err;	
+				return(err);
 			}
             /* connection error */
             else if (err == CR_SERVER_GONE_ERROR || err == CR_SERVER_LOST) 
@@ -2302,7 +2288,7 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 					error("Fatal error: MySQL can not be reconnected!.\n");
 					handle->msp = NULL;
 					
-					return -1;
+					return(-1);
                 }
                 else {
 					continue;
@@ -2311,49 +2297,137 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
             /* other fatal error */
             else {
 				error("Mysql Unknow error. mysql failed.\n");
-				return -1;
+				return(-1);
 			}
 		} 
         else {
 			break;
 		}
 	}
-
-	return 0;
+	return(0);
 }
-int SQL_process() {
+
+void query_event_echo(char *buf, Log_event *ev, PRINT_EVENT_INFO *print_event_info) {
+	((Query_log_event*)ev)->bprint((uchar*)buf, print_event_info);
+	size_t readed = my_b_get_bytes_in_buffer(&print_event_info->head_cache);
+	my_b_read(&print_event_info->head_cache, (uchar*)buf, readed);
+	buf[readed] = '\0';
+}
+
+void* SQL_process(void *args) {
+	sleep(1); //test
 	int re;
 	char *buf = NULL;
+	PRINT_EVENT_INFO print_event_info;
+	Log_event *ev;
+	char *result = NULL;
+	char delims[] = "\n";
 
 	buf = (char*)calloc(1, QUERY_STR_LEN + 1);
 	if (NULL == buf) {
 		perror("calloc buf faild!");	
-		return -1;
+		return (void*)0;
 	}
-	buf[QUERY_STR_LEN] = '\0';
+
+	/* connect to slave database */
 	printf("connect to slave.[%s:%d] user: %s\n", 
 		slave_host, slave_port, slave_user);
 	slave_h = __mysql_init(slave_host, slave_user, slave_pass, NULL, slave_port);
 	if (NULL == slave_h) {
 		error("failed to create mysql handler.");
-		return -1;
+		return (void*)0;
 	}
 
+	/* event output configuration */
+	print_event_info.short_form= short_form;
+	print_event_info.verbose = short_form ? 0 : verbose;
+	print_event_info.hexdump_from = 0; /* Disabled */
+	print_event_info.base64_output_mode= opt_base64_output_mode;
+
 	for ( ;; ) {
-		fgets(buf, QUERY_STR_LEN, rf);
-		buf[strlen(buf) - 1] = '\0';
-		//error("********************%s", buf);
-		for ( ;; ) {
-			re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
-			if (re != 0) {
-				error("__mysql_query ERROR! sql=%s", buf);
-				__mysql_query(slave_h, "use attention", sizeof("use attention")-1, MS_CONN_RETRY);
-			} else {
-				break;//success	
+		/* get event from queue */
+		ev = (Log_event *)dequeue();
+		if (NULL == ev) {
+			//sleep(1);
+			continue;	
+		}
+
+		/* process event, generate SQL statement */
+		Log_event_type ev_type = ev->get_type_code();
+		//printf("qs: %ju evtype: %d\n", qs, ev_type);
+		switch (ev_type) {
+		    case QUERY_EVENT: {
+				query_event_echo(buf, ev, &print_event_info);
+				break;
+				}
+			case XID_EVENT: {
+				snprintf(buf, QUERY_STR_LEN, "%s", "COMMIT");
+				goto end;
+				break;
+				}
+			case ROTATE_EVENT: {
+				Rotate_log_event *rev= (Rotate_log_event *)ev;
+				size_t tlen = strlen(current_log_name);
+		        memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
+		        strncpy(current_log_name, rev->new_log_ident, tlen);
+				printf("rotate event log name: %s pos: %ju\n", current_log_name, (uintmax_t)rev->log_pos); //test
+				goto end;
+				}
+			default:
+				printf("****unknown event******:%d\n", (int)ev_type);
+				goto end;
+		}
+
+		/* filter module */
+
+		/* execute SQL to slave database */
+		result = strtok(buf, delims);
+		while( result != NULL ) {
+			//printf("result is \"%s\"\n", result);
+			if (*result == ';') {
+				result = strtok( NULL, delims);
+				continue;	
 			}
+			for ( ;; ) {
+				re = __mysql_query(slave_h, result, strlen(result), MS_CONN_RETRY);
+				if (re != 0) {
+					error("__mysql_query ERROR! sql=%s", result);
+					break;
+					//__mysql_query(slave_h, ((Query_log_event*)ev)->db, strlen(((Query_log_event*)ev)->db), MS_CONN_RETRY);
+				} else {
+					break;//success	
+				}
+			}
+			result = strtok( NULL, delims);
+		}
+
+end:
+		/* record position */
+		if (ev_type == XID_EVENT || ev_type == ROTATE_EVENT) {
+			fseek(conf_file_fd, 0, SEEK_SET);
+			fprintf(conf_file_fd, "%s\n", current_log_name);
+			if (ev->log_pos == 0 && ev_type == ROTATE_EVENT) {
+				fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);
+			} else {
+				fprintf(conf_file_fd, "%ju\n", (uintmax_t)ev->log_pos);
+			}
+			fprintf(conf_file_fd, "%s\n", host);
+			fprintf(conf_file_fd, "%s\n", user);
+			fprintf(conf_file_fd, "%s\n", pass);
+			fprintf(conf_file_fd, "%d\n", port);
+			fprintf(conf_file_fd, "%ju\n", (uintmax_t)self_server_id);
+			fflush(conf_file_fd);
+		}
+		/* free log_event object*/
+		if (ev) {
+			if (remote_opt)
+				ev->temp_buf= 0;
+			if (ev_type != FORMAT_DESCRIPTION_EVENT)
+				delete ev;
 		}
 	}
 	free(buf);
+	return NULL;
 }
 
 int
@@ -2405,17 +2479,51 @@ daemonize(int nochdir, int noclose)
 	return (0);
 }
 
-void killmain(int sig) {
-	error("main process exit");
-	exit(1);
-}
-
 void rmfifo() {
 	char buf[1024] = {0};
 	snprintf(buf, 1024, "%s.fifo", conf_file);
 	if (remove(buf) != 0) {
 		error("remove %s faild!", buf);
 	}
+}
+
+void enqueue(void *e){
+	//printf("enqueue\n");
+	struct EVENT_ITEM *item; 
+
+	if (qs > 10000)
+		sleep(1);
+	item = (struct EVENT_ITEM *)calloc(1, sizeof(struct EVENT_ITEM));
+	if (NULL == item) {
+		error("calloc struct EVENT_ITEM faild");	
+		return;
+	}
+	item->e = e;
+	//lock
+	pthread_mutex_lock(&q_lock);
+	TAILQ_INSERT_TAIL(&event_q_head, item, entries);  
+	qs++;
+	pthread_mutex_unlock(&q_lock);
+}
+
+void *dequeue() {
+	struct EVENT_ITEM *item;
+	void *e;
+	//lock
+	pthread_mutex_lock(&q_lock);
+	if (TAILQ_EMPTY(&event_q_head)) {
+		pthread_mutex_unlock(&q_lock);
+		//printf("queue kong\n");
+		//sleep(2);
+		return NULL;
+	}
+	item = TAILQ_FIRST(&event_q_head);
+	qs--;
+	e = item->e;
+	TAILQ_REMOVE(&event_q_head, item, entries);
+	pthread_mutex_unlock(&q_lock);
+	free(item);
+	return e;
 }
 
 int main(int argc, char** argv)
@@ -2441,7 +2549,6 @@ int main(int argc, char** argv)
     exit(1);
   }
 	//my add
-	signal(SIGCHLD, killmain);
 	char buf[1024] = {0};
 	result_file = fopen("/dev/null", "w");
 	if (NULL == result_file) {
@@ -2470,6 +2577,8 @@ int main(int argc, char** argv)
 		error("conf arg required!");	
 		exit(1);
 	}
+	//setvbuf(query_result_file, NULL, _IONBF, 0);
+	memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
 	if (access(conf_file, F_OK)) {
 		printf("create relay info file[%s}\n", conf_file);	
 		conf_file_fd = fopen(conf_file, "w+");	
@@ -2478,7 +2587,7 @@ int main(int argc, char** argv)
 			exit(1);
 		}
 		fprintf(conf_file_fd, "%s\n", *argv);	
-		strlcpy(current_log_name, *argv++, sizeof(current_log_name));
+		strlcpy(current_log_name, *argv++, _POSIX_PATH_MAX + 1);
 		fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);	
 		fprintf(conf_file_fd, "%s\n", host);	
 		fprintf(conf_file_fd, "%s\n", user);	
@@ -2495,7 +2604,7 @@ int main(int argc, char** argv)
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
 		//printf("log name: %s\n", buf);
-		strlcpy(current_log_name, buf, sizeof(current_log_name));
+		strlcpy(current_log_name, buf, _POSIX_PATH_MAX + 1);
 		fgets(buf, sizeof(buf), conf_file_fd);
 		buf[strlen(buf) - 1] = '\0';
 		//printf("position: %s\n", buf);
@@ -2526,23 +2635,36 @@ int main(int argc, char** argv)
 		//printf("\n");
 	}
 	//my add
-		printf("log name: %s\n", current_log_name);
-		printf("position: %ju\n", (uintmax_t)start_position);
-		printf("master host: %s\n", host);
-		printf("master user: %s\n", user);
-		printf("master pass: %s\n", pass);
-		printf("master port: %ju\n", (uintmax_t)port);
-		printf("self server id: %ju\n", (uintmax_t)self_server_id);
-		printf("\n");
+	printf("log name: %s\n", current_log_name);
+	printf("position: %ju\n", (uintmax_t)start_position);
+	printf("master host: %s\n", host);
+	printf("master user: %s\n", user);
+	printf("master pass: %s\n", pass);
+	printf("master port: %ju\n", (uintmax_t)port);
+	printf("self server id: %ju\n", (uintmax_t)self_server_id);
+	printf("\n");
 	if (is_daemonize) {
 		daemonize(1, 0);
 	}
-	pid_t pid = fork();
+	
+	/*pid_t pid = fork();
 	if (pid < 0) {
 		perror("fork faild!");
 		exit(0);
 	} else if (pid == 0) { //child process
 		SQL_process();
+		exit(1);
+	}*/
+	TAILQ_INIT(&event_q_head);
+	if (pthread_mutex_init(&q_lock, NULL)) {
+		error("Failed to create mutex");
+		exit(1);
+	}
+	int err;
+	pthread_t tid;
+	err = pthread_create(&tid, NULL, SQL_process, NULL);
+	if (0 != err) {
+		error("sql thread create faild, main thread exit.");	
 		exit(1);
 	}
 
@@ -2601,8 +2723,8 @@ int main(int argc, char** argv)
     start_position= BIN_LOG_HEADER_SIZE;
   }
 	//my add
-	printf("kill sql process.[%d]\n", (int)pid);
-	kill(pid, SIGKILL);
+	//printf("kill sql process.[%d]\n", (int)pid);
+	//kill(pid, SIGKILL);
 
   /*
     Issue a ROLLBACK in case the last printed binlog was crashed and had half

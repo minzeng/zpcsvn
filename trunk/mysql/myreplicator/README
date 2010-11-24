@@ -4,3 +4,5 @@
       2, grant SUPER on mac.* to repl@'192.168.46.%'
       3, 注意一条语句中带\n的情况
       4，client目录中的491行，LDADD变量，/libmysql_r/libmysqlclient_r.la
+      
+使用方法：
