@@ -4,6 +4,9 @@
       2, grant SUPER on mac.* to repl@'192.168.46.%'
       3, 注意一条语句中带\n的情况
       4，client目录中的491行，LDADD变量，/libmysql_r/libmysqlclient_r.la
+      
+静态编译
+gcc -g -DSAFE_MUTEX -DSAFEMALLOC -Wall -Wextra -Wunused -Wwrite-strings -Wno-unused-parameter -Wctor-dtor-privacy -Wnon-virtual-dtor -felide-constructors -fno-exceptions -fno-rtti -m64 -DUNIV_MUST_NOT_INLINE -DEXTRA_DEBUG -DFORCE_INIT_OF_VARS -DSAFEMALLOC -DPEDANTIC_SAFEMALLOC -DSAFE_MUTEX -fno-implicit-templates -fno-exceptions -fno-rtti -rdynamic -o .libs/mysqlbinlog mysqlbinlog.o mf_tempdir.o my_new.o my_bit.o my_bitmap.o my_vle.o base64.o -lpthread ../libmysql_r/.libs/libmysqlclient_r.a -lcrypt -lnsl -lm -lz -Wl,--rpath -Wl,/data0/zpc/mysql-bin-s//lib/mysql
 
 
 libexec/mysqld --defaults-file=/data0/zpc/mysql-bin/share/mysql/my-master.cnf --basedir=/data0/zpc/mysql-bin/ --datadir=/data0/zpc/mysql-bin/var/ -u zpc 
