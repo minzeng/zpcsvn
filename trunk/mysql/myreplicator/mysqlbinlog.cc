@@ -52,6 +52,7 @@ char server_version[SERVER_VERSION_LENGTH];
 ulong server_id = 0;
 
 //my add
+#define EVENT_QUEUE_SIZE 10000
 #define QUERY_STR_LEN (16*1024*1024) 
 ulong self_server_id = 777777777;
 char *conf_file = NULL;
@@ -149,7 +150,8 @@ enum Exit_status {
   /** An error occurred and execution should stop. */
   ERROR_STOP,
   /** No error occurred but execution should stop. */
-  OK_STOP
+  OK_STOP,
+  ERROR_NET
 };
 
 static Exit_status dump_local_log_entries(PRINT_EVENT_INFO *print_event_info,
@@ -1505,8 +1507,13 @@ static Exit_status dump_log_entries(const char* logname)
   
   print_event_info_s.verbose= short_form ? 0 : verbose;
 
-  rc= (remote_opt ? dump_remote_log_entries(&print_event_info_s, logname) :
-       dump_local_log_entries(&print_event_info_s, logname));
+  for (;;) {
+	rc= (remote_opt ? dump_remote_log_entries(&print_event_info_s, logname) :
+	    dump_local_log_entries(&print_event_info_s, logname));
+		
+	sleep(3);	
+	fprintf(stderr, "reconnect to master...\n");
+  }
   /* Set delimiter back to semicolon */
   fprintf(result_file, "DELIMITER ;\n");
   strmov(print_event_info_s.delimiter, ";");
@@ -2227,7 +2234,7 @@ __mysql_init(const char *db_host, const char *db_user, const char *db_pass,
 	
 	return handle;
 }
-
+#define CONNECT_LOST (-198)
 int
 __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 {
@@ -2240,8 +2247,8 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 		
 	if (handle->msp == NULL) {
 		if (__mysql_conn(handle) != 0) {
-			error("__mysql_store_result: MySQL can not be reconnected!.\n");
-			return(-1);
+			error("__mysql_query: MySQL can not be reconnected!.\n");
+			return(CONNECT_LOST);
 		}
 	}
 
@@ -2282,7 +2289,7 @@ __mysql_query(MYSQL_CONN *handle, const char *sql_str, int sql_len, int options)
 					error("Fatal error: MySQL can not be reconnected!.\n");
 					handle->msp = NULL;
 					
-					return(-1);
+					return(CONNECT_LOST);
                 }
                 else {
 					continue;
@@ -2463,6 +2470,7 @@ void* SQL_process(void *args) {
 		/* process event, generate SQL statement */
 		Log_event_type ev_type = ev->get_type_code();
 		//printf("qs: %ju evtype: %d\n", qs, ev_type); //test
+		print_event_info.db[0] = '\0'; /* for contain "use db" in every SQL */
 		switch (ev_type) {
 		    case QUERY_EVENT: {
 				query_event_echo(buf, ev, &print_event_info);
@@ -2482,7 +2490,7 @@ void* SQL_process(void *args) {
 				goto end;
 				}
 			default:
-				error("****unknown event******:%d\n", (int)ev_type); /* unknown event */
+				printf("****unknown event******:%d\n", (int)ev_type); /* unknown event */
 				goto end;
 		}
 
@@ -2494,8 +2502,14 @@ void* SQL_process(void *args) {
 			re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
 			if (re != 0) {
 				error("__mysql_query ERROR! sql=%s", buf);
+				if (re == CONNECT_LOST) { /* connection lost */
+					//enqueue_h(ev);	
+					//ev = 0;
+					/* make different db name */
+					sleep(2);
+					continue;
+				}
 				break;
-				//__mysql_query(slave_h, ((Query_log_event*)ev)->db, strlen(((Query_log_event*)ev)->db), MS_CONN_RETRY);
 			} else {
 				/* query success */	
 				/* fetch all result, avoid "Commands out of sync; you can't run this command now */
@@ -2600,19 +2614,41 @@ daemonize(int nochdir, int noclose)
 	}
 	return (0);
 }
-
-void enqueue(void *e){
+void enqueue_h(void *e){
 	//printf("enqueue\n");
 	struct EVENT_ITEM *item; 
 
 	item = (struct EVENT_ITEM *)calloc(1, sizeof(struct EVENT_ITEM));
 	if (NULL == item) {
-		error("calloc struct EVENT_ITEM faild");	
+		error("calloc struct EVENT_ITEM faild in enqueue_h");	
 		return;
 	}
 	item->e = e;
 	//lock
 	pthread_mutex_lock(&q_lock);
+	TAILQ_INSERT_HEAD(&event_q_head, item, entries);  
+	qs++;
+	pthread_mutex_unlock(&q_lock);
+	pthread_cond_signal(&qready);
+}
+
+void enqueue(void *e){
+	//printf("enqueue\n");
+	struct EVENT_ITEM *item; 
+
+	pthread_mutex_lock(&q_lock);
+	if (qs > EVENT_QUEUE_SIZE) { /* avoid alloc huge memory*/
+		sleep(1);
+		pthread_mutex_unlock(&q_lock);
+		pthread_cond_signal(&qready);
+		return;		
+	}
+	item = (struct EVENT_ITEM *)calloc(1, sizeof(struct EVENT_ITEM));
+	if (NULL == item) {
+		error("calloc struct EVENT_ITEM faild in enqueue");	
+		return;
+	}
+	item->e = e;
 	TAILQ_INSERT_TAIL(&event_q_head, item, entries);  
 	qs++;
 	pthread_mutex_unlock(&q_lock);
