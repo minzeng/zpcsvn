@@ -150,8 +150,7 @@ enum Exit_status {
   /** An error occurred and execution should stop. */
   ERROR_STOP,
   /** No error occurred but execution should stop. */
-  OK_STOP,
-  ERROR_NET
+  OK_STOP
 };
 
 static Exit_status dump_local_log_entries(PRINT_EVENT_INFO *print_event_info,
@@ -741,7 +740,8 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
       start_datetime= 0;
       offset= 0; // print everything and protect against cycling rec_count
     }
-    if (server_id && (server_id != ev->server_id))
+	//my add
+    if (server_id && (server_id == ev->server_id))
       /* skip just this event, continue processing the log. */
       goto end;
     if (((my_time_t)(ev->when) >= stop_datetime)
@@ -765,13 +765,9 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
 
     switch (ev_type) {
     case QUERY_EVENT:
-      /*if (!((Query_log_event*)ev)->is_trans_keyword() &&
-          shall_skip_database(((Query_log_event*)ev)->db)) 
-        goto end;
-	*/
-	if (!shall_skip_database(((Query_log_event*)ev)->db)) {
-		goto end;
-	}
+		if (!shall_skip_database(((Query_log_event*)ev)->db)) {
+			goto end;
+		}
       if (opt_base64_output_mode == BASE64_OUTPUT_ALWAYS)
       {
         if ((retval= write_event_header_and_base64(ev, result_file,
@@ -2459,6 +2455,14 @@ void* SQL_process(void *args) {
 	print_event_info.hexdump_from = 0; /* Disabled */
 	print_event_info.base64_output_mode= opt_base64_output_mode;
 
+	if (disable_log_bin) {
+		sprintf(buf, "/*!32316 SET @OLD_SQL_LOG_BIN=@@SQL_LOG_BIN, SQL_LOG_BIN=0*/;");
+		re = __mysql_query(slave_h, buf, strlen(buf), MS_CONN_RETRY);
+		if (re != 0) {
+			error("exec @OLD_SQL_LOG_BIN=@@SQL_LOG_BIN faild");
+			return (void*)0;
+		}
+	}
 	for ( ;; ) {
 		/* get event from queue */
 		ev = (Log_event *)dequeue();
@@ -2466,7 +2470,6 @@ void* SQL_process(void *args) {
 			//sleep(1);
 			continue;	
 		}*/
-
 		/* process event, generate SQL statement */
 		Log_event_type ev_type = ev->get_type_code();
 		//printf("qs: %ju evtype: %d\n", qs, ev_type); //test
@@ -2483,9 +2486,8 @@ void* SQL_process(void *args) {
 				}
 			case ROTATE_EVENT: {
 				Rotate_log_event *rev= (Rotate_log_event *)ev;
-				size_t tlen = strlen(current_log_name);
 		        memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
-		        strncpy(current_log_name, rev->new_log_ident, tlen);
+		        memcpy(current_log_name, rev->new_log_ident, rev->ident_len);
 				printf("rotate event log name: %s pos: %ju\n", current_log_name, (uintmax_t)rev->log_pos); //test
 				goto end;
 				}
@@ -2614,23 +2616,6 @@ daemonize(int nochdir, int noclose)
 	}
 	return (0);
 }
-void enqueue_h(void *e){
-	//printf("enqueue\n");
-	struct EVENT_ITEM *item; 
-
-	item = (struct EVENT_ITEM *)calloc(1, sizeof(struct EVENT_ITEM));
-	if (NULL == item) {
-		error("calloc struct EVENT_ITEM faild in enqueue_h");	
-		return;
-	}
-	item->e = e;
-	//lock
-	pthread_mutex_lock(&q_lock);
-	TAILQ_INSERT_HEAD(&event_q_head, item, entries);  
-	qs++;
-	pthread_mutex_unlock(&q_lock);
-	pthread_cond_signal(&qready);
-}
 
 void enqueue(void *e){
 	//printf("enqueue\n");
@@ -2656,6 +2641,7 @@ void enqueue(void *e){
 }
 
 void *dequeue() {
+	//printf("dequeue\n");
 	struct EVENT_ITEM *item;
 	void *e;
 	//lock
