@@ -44,7 +44,9 @@ myreplicator OPTIONS
         defaults-file：指定配置文件
         daemon：以守护进程的方式启动
         self-server-id：myreplicator自身扮演的服务器角色。注意不能为0。
-        database：指定对某个库的操作可以过滤掉
+        database：过滤掉指定库的数据
+        server-id：过滤掉指定server-id的日志记录
+        disable-log-bin：禁止在被写入的库上产生binlog日志
         
     提示：
         以上选项要作为命令行参数要在前面加"--"
