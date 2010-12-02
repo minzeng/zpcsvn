@@ -50,6 +50,16 @@ myreplicator OPTIONS
     提示：
         以上选项要作为命令行参数要在前面加"--"
         以上选项带等号的表示需要参数，否则不需要
+        
+relay-info file format
+    此文件格式与master.info大致相同，只在最后多了一个self server id
+    mysql-bin.000003 => master binlog name
+    106              => binglog position
+    10.210.74.143    => master host
+    repl             => master user name 
+    123qwe           => master user password
+    3306             => master port
+    128              => self server id
 
 COPYRIGHT
 
