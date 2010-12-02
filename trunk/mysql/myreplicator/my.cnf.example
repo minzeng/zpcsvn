@@ -1,0 +1,17 @@
+[myreplicator]
+host=10.210.74.143
+port=3306
+user=repl
+password=123qwe
+start-position=4
+slave-host=10.210.74.143
+slave-user=repl
+slave-pass=123qwe
+slave-port=3307
+self-server-id=128
+relay-info=/tmp/re.info
+#replication-ignore-db=zjmdmm
+ignore-server-id=111
+#daemon
+log-file=/var/log/myrpl.log
+skip-slave-error

@@ -1,0 +1,17 @@
+初次部署启动：
+		1，在my.cnf.example的基础上根据实际情况建立my.cnf配置文件。
+		   参数选项含义请参考README文档
+		2，启动myreplicator：
+			$./myreplicator ---defaults-file=my.cnf master_binlog_name
+		   启动后查看myreplicator日志文件，如果没有错误日志证明已经正常启动
+
+重新启动：
+		1，修改my.cnf配置。
+		2，如果希望从上一次执行的断电继续执行，不要删除relay-info文件，并将
+		   对my.cnf的修改手动同步到relay-info中。relay-info格式请参考README
+		   文档。
+
+		   如果希望从新的起点开始复制，请确保relay-info指定的文件被删除。
+		3，启动myreplicator：
+			$./myreplicator ---defaults-file=my.cnf master_binlog_name
+		   启动后查看myreplicator日志文件，如果没有错误日志证明已经正常启动
