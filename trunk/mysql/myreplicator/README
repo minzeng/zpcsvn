@@ -43,7 +43,7 @@ myreplicator OPTIONS
         daemon：以守护进程的方式启动
         self-server-id=：myreplicator自身扮演的服务器角色。注意不能为0。
         replication-ignore-db=：过滤掉指定库的数据
-        server-id=：过滤掉指定server-id的日志记录
+        ignore-server-id=：过滤掉指定server-id的日志记录
         log-file=：myreplicator日志文件，默认值[./myrpl.log]
         skip-slave-error；当向slave写入数据出错时，设置该选项将忽略错误，否则程序停止。
         
