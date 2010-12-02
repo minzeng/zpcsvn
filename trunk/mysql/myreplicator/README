@@ -19,8 +19,6 @@ DESCRIPTION
         host=10.210.74.143
         #slave configure
         slave-host=10.210.74.143
-        #other
-        read-from-remote-server
         #master.info
         relay-info=/tmp/re.info
     其中最关键的一个配置项是relay-info，它实时记录着binlog的执行位置，为
@@ -29,27 +27,29 @@ DESCRIPTION
     
 myreplicator OPTIONS
     主库配置信息：
-        host：主库主机名
-        port：主库服务端口
-        user：主库用户名
-        password：主库用户密码
-        start-position：复制起始位置，无relay-info文件时有效
+        host=：主库主机名
+        port=：主库服务端口
+        user=：主库用户名
+        password=：主库用户密码
+        start-position=：复制起始位置，无relay-info文件时有效
     辅库配置信息：
-        slave-host：辅库主机名
-        slave-port：辅库服务端口
-        slave-user：辅库用户名
-        slave-pass：辅库用户密码
+        slave-host=：辅库主机名
+        slave-port=：辅库服务端口
+        slave-user=：辅库用户名
+        slave-pass=：辅库用户密码
     其他配置：
-        relay-info：同步位置信息文件，实时记录binlog的执行位置
-        defaults-file：指定配置文件
+        relay-info=：同步位置信息文件，实时记录binlog的执行位置，默认值为[./relay.info]
+        defaults-file=：指定配置文件
         daemon：以守护进程的方式启动
-        self-server-id：myreplicator自身扮演的服务器角色。注意不能为0。
-        database：过滤掉指定库的数据
-        server-id：过滤掉指定server-id的日志记录
-        disable-log-bin：禁止在被写入的库上产生binlog日志
+        self-server-id=：myreplicator自身扮演的服务器角色。注意不能为0。
+        replication-ignore-db=：过滤掉指定库的数据
+        server-id=：过滤掉指定server-id的日志记录
+        log-file=：myreplicator日志文件，默认值[./myrpl.log]
+        skip-slave-error；当向slave写入数据出错时，设置该选项将忽略错误，否则程序停止。
         
     提示：
         以上选项要作为命令行参数要在前面加"--"
+        以上选项带等号的表示需要参数，否则不需要
 
 COPYRIGHT
 
