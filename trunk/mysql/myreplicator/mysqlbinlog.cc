@@ -62,9 +62,9 @@ char master_host[256];
 char master_user[256];
 char master_pass[256];
 char *slave_host = NULL;
-char *slave_user = NULL;      
-char *slave_pass = NULL; 
-char *slave_db_name = NULL; 
+char *slave_user = NULL;
+char *slave_pass = NULL;
+char *slave_db_name = NULL;
 int slave_port = 3306;
 bool is_daemonize = false;
 /* event queue */
@@ -76,9 +76,10 @@ TAILQ_HEAD(,EVENT_ITEM) event_q_head;
 pthread_mutex_t q_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t qready = PTHREAD_COND_INITIALIZER;
 uintmax_t qs = 0;
-static bool skip_slave_error = 0;
 void enqueue(void *);
 void *dequeue();
+
+static bool skip_slave_error = 0;
 
 static FILE *log_file_p;
 char *log_file = (char*)"./myrpl.log";
