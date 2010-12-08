@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include "mystruct.h"
-
+/* redis client lib */
+#include "hiredis.h"
 enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 			MYSQL_TYPE_SHORT,  MYSQL_TYPE_LONG,
 			MYSQL_TYPE_FLOAT,  MYSQL_TYPE_DOUBLE,
@@ -20,217 +21,43 @@ enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 			MYSQL_TYPE_VAR_STRING=253,
 			MYSQL_TYPE_STRING=254,
 			MYSQL_TYPE_GEOMETRY=255
-
 };
 
-int Test(int n)
-{
-	printf("Filed number is: %d",n);
-	return n*10;
+/* connect redis */
+unsigned int j;
+static redisContext *c = NULL; 
+redisReply *reply;
+char list_key[64];
+char buf[64];
 
-}
-
-int InsertProcess(const char* dbname,const char* tablename,int filednum,struct MY_DATA* datalist)
-{
-	int i=0;
-	printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",dbname);
-	printf("^^^^^^^^^^^Table name is: %s^^^^^^^^^^^^\n",tablename);
-	printf("^^^^^^^^^^^Filed num  is: %d^^^^^^^^^^^^\n",filednum);
-	for(i=0;i<filednum;i++)
-	{
-			if(datalist[i].data==NULL)
-				{
-				printf("^^^^^^^^^^^NO DATA^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalist[i].type);
-				continue;
-				}
-			switch(datalist[i].type)
-			{
-			case MYSQL_TYPE_SHORT:
-			case MYSQL_TYPE_LONG:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_FLOAT:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((float *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_DOUBLE:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((double *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_VARCHAR:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_BLOB:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_DATETIME:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_LONGLONG:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_TIMESTAMP:
-				if(datalist[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);	
-					}
-				break;
-			case MYSQL_TYPE_STRING:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_TINY:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_DATE:
-				if(datalist[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);	
-					}
-				break;
-			default:
-				printf("^^^^^^^^^^^ERR^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalist[i].type);
-				break;
-			}
+int init_redis() {
+	c = redisConnect((char*)"127.0.0.1", 9736);
+	if (c->err) {
+	    printf("Connection error: %s\n", c->errstr);
+	    exit(1);
 	}
-	printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
-	return filednum;
 }
 
-int DeleteProcess(const char* dbname,const char* tablename,int filednum,struct MY_DATA* datalist)
-{
-		int i=0;
-		printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",dbname);
-		printf("^^^^^^^^^^^Table name is: %s^^^^^^^^^^^^\n",tablename);
-		printf("^^^^^^^^^^^Filed num  is: %d^^^^^^^^^^^^\n",filednum);
-		for(i=0;i<filednum;i++)
-		{
-			if(datalist[i].data==NULL)
-				{
-				printf("^^^^^^^^^^^NO DATA^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalist[i].type);
-				continue;
-				}
-			switch(datalist[i].type)
-			{
-			case MYSQL_TYPE_SHORT:
-			case MYSQL_TYPE_LONG:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_FLOAT:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((float *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_DOUBLE:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((double *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_VARCHAR:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_BLOB:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_DATETIME:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_LONGLONG:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_TIMESTAMP:
-				if(datalist[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);	
-					}	
-			case MYSQL_TYPE_STRING:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);
-				break;
-			case MYSQL_TYPE_TINY:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalist[i].data));
-				break;
-			case MYSQL_TYPE_DATE:
-				if(datalist[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalist[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,datalist[i].data);	
-					}
-				break;
-			default:
-				printf("^^^^^^^^^^^ERR^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalist[i].type);
-				break;
-			}
-		}
-		printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
-		return filednum;
-}
-
-int UpdateProcess(const char* dbname,const char* tablename,int filednum,struct MY_DATA* datalistold,struct MY_DATA* datalistnew)
-{
-		
-		int i=0;
-		printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",dbname);
-		printf("^^^^^^^^^^^Table name is: %s^^^^^^^^^^^^\n",tablename);
-		printf("^^^^^^^^^^^Filed num  is: %d^^^^^^^^^^^^\n",filednum);
-		for(i=0;i<filednum;i++)
-		{
-			if(datalistold[i].data==NULL||datalistnew[i].data==NULL)
-				{
-				printf("^^^^^^^^^^^NO DATA^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalistold[i].type);
-				continue;
-				}
-			switch(datalistold[i].type)
-			{
-			case MYSQL_TYPE_SHORT:
-			case MYSQL_TYPE_LONG:
-				printf("^^^^^^^^^^^Data%d old is: %d  new is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalistold[i].data),*((int *)datalistnew[i].data));
-				break;
-			case MYSQL_TYPE_FLOAT:
-				printf("^^^^^^^^^^^Data%d old is: %f  new is: %f^^^^^^^^^^^^\n",i+1,*((float *)datalistold[i].data),*((float *)datalistnew[i].data));
-				break;
-			case MYSQL_TYPE_DOUBLE:
-				printf("^^^^^^^^^^^Data%d old is: %f  new is: %f^^^^^^^^^^^^\n",i+1,*((double *)datalistold[i].data),*((double *)datalistnew[i].data));
-				break;
-			case MYSQL_TYPE_VARCHAR:
-				printf("^^^^^^^^^^^Data%d old is: %s  new is: %s^^^^^^^^^^^^\n",i+1,datalistold[i].data,datalistnew[i].data);
-				break;
-			case MYSQL_TYPE_BLOB:
-				printf("^^^^^^^^^^^Data%d old is: %s  new is: %s^^^^^^^^^^^^\n",i+1,datalistold[i].data,datalistnew[i].data);
-				break;
-			case MYSQL_TYPE_DATETIME:
-				printf("^^^^^^^^^^^Data%d old is: %s  new is: %s^^^^^^^^^^^^\n",i+1,datalistold[i].data,datalistnew[i].data);
-				break;
-			case MYSQL_TYPE_LONGLONG:
-				printf("^^^^^^^^^^^Data%d old is: %d  new is: %d^^^^^^^^a^^^^\n",i+1,*((long long *)datalistold[i].data),*((long long *)datalistnew[i].data));
-				break;
-			case MYSQL_TYPE_TIMESTAMP:
-				printf("^^^^^^^^^^^Data%d old is: %d  new is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalistold[i].data),*((long long *)datalistnew[i].data));
-				break;
-			case MYSQL_TYPE_STRING:
-				printf("^^^^^^^^^^^Data%d old is: %s  new is: %s^^^^^^^^^^^^\n",i+1,datalistold[i].data,datalistnew[i].data);
-				break;
-			case MYSQL_TYPE_TINY:
-				printf("^^^^^^^^^^^Data%d old is: %d  new is: %d^^^^^^^^^^^^\n",i+1,*((int *)datalistold[i].data),*((int *)datalistnew[i].data),datalistold[i].type);
-				break;
-			case MYSQL_TYPE_DATE:
-				if(datalistold[i].length>0){
-				printf("^^^^^^^^^^^Data%d old is: %d  new is: %d^^^^^^^^^^^^\n",i+1,*((long long *)datalistold[i].data),*((long long *)datalistnew[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d old is: %s  new is: %s^^^^^^^^^^^^\n",i+1,datalistold[i].data,datalistnew[i].data);
-					}
-				break;
-			default:
-				printf("^^^^^^^^^^^ERR^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",datalistold[i].type);
-				break;
-			}
-		
-		}
-		printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
-		return filednum;
-}
-//--------------------------------NEW TEST------------------------------------------------------------
 int InsertProcess_NEW(struct TRIGGER_DATA* data)
 {
 	int i=0;
 	printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",data->dbname);
 	printf("^^^^^^^^^^^Table name is: %s^^^^^^^^^^^^\n",data->tbname);
 	printf("^^^^^^^^^^^Filed num  is: %d^^^^^^^^^^^^\n",data->filednum);
+
+	/* process attention only */
+	if (memcmp(data->dbname, "attention", sizeof("attention"))) {
+		return -1;
+	}
+
+	if (NULL == c) {
+		c = redisConnect((char*)"127.0.0.1", 9736);
+		if (c->err) {
+			printf("Connection error: %s\n", c->errstr);
+			exit(1);
+		}
+	}
+
 	for(i=0;i<data->filednum;i++)
 	{
 			if(data->row_list[i].data==NULL)
@@ -260,13 +87,20 @@ int InsertProcess_NEW(struct TRIGGER_DATA* data)
 				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
 				break;
 			case MYSQL_TYPE_LONGLONG:
+				if (0 == i) {
+					snprintf(list_key, 64, "%ju", *(intmax_t*)data->row_list[i].data);
+				} else {
+					snprintf(buf, 64, "%ju", *(intmax_t*)data->row_list[i].data);
+					reply = redisCommand(c,"LPUSH %s %s", list_key, buf);
+					freeReplyObject(reply);
+				}
 				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
 				break;
 			case MYSQL_TYPE_TIMESTAMP:
 				if(data->row_list[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);	
+				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
+				}else{
+				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
 					}
 				break;
 			case MYSQL_TYPE_STRING:
@@ -279,7 +113,7 @@ int InsertProcess_NEW(struct TRIGGER_DATA* data)
 				if(data->row_list[i].length>0){
 				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));}
 				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);	
+				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
 					}
 				break;
 			default:
@@ -288,6 +122,7 @@ int InsertProcess_NEW(struct TRIGGER_DATA* data)
 			}
 	}
 	printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
+	//redisFree(c);
 	return data->filednum;
 }
 
