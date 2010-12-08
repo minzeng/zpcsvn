@@ -2168,9 +2168,7 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
       value+= length;
     }
   //----------To Use my_row_list-----------------------
-  if(type_code==WRITE_ROWS_EVENT)
-  {
-		mytriggerdata->row_list=my_row_list;
+  		mytriggerdata->row_list=my_row_list;
   		mytriggerdata->log_pos=log_pos;
   		mytriggerdata->ioperate_type=WRITE_ROWS_EVENT;
 		mytriggerdata->filednum=(int)m_width;
@@ -2183,40 +2181,24 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
 		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
 		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
 		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
-  	}
+  if(type_code==WRITE_ROWS_EVENT)
+  {
+		
+  		mytriggerdata->ioperate_type=WRITE_ROWS_EVENT;
+		
+  }
   if(type_code==DELETE_ROWS_EVENT)
   {
-		mytriggerdata->row_list=my_row_list;
-  		mytriggerdata->log_pos=log_pos;
+		
   		mytriggerdata->ioperate_type=DELETE_ROWS_EVENT;
-		mytriggerdata->filednum=(int)m_width;
-  		mytriggerdata->dbname=new char[1+strlen(map->get_db_name())];
-		memset(mytriggerdata->dbname,'\0',1+strlen(map->get_db_name()));
-		strlcpy(mytriggerdata->dbname,map->get_db_name(),1+(size_t)strlen(map->get_db_name()));
-  		mytriggerdata->tbname=new char[1+strlen(map->get_table_name())];
-		memset(mytriggerdata->tbname,'\0',1+strlen(map->get_table_name()));
-		strlcpy(mytriggerdata->tbname,map->get_table_name(),1+(size_t)strlen(map->get_table_name()));
-		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
-		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
-		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
-  	}
+		
+  }
   if(type_code==UPDATE_ROWS_EVENT)
   {
-		mytriggerdata->row_list=my_row_list;
+		
   		mytriggerdata->row_list_update=my_row_list_update;
-  		mytriggerdata->log_pos=log_pos;
   		mytriggerdata->ioperate_type=UPDATE_ROWS_EVENT;
-		mytriggerdata->filednum=(int)m_width;
-  		mytriggerdata->dbname=new char[1+strlen(map->get_db_name())];
-		memset(mytriggerdata->dbname,'\0',1+strlen(map->get_db_name()));
-		strlcpy(mytriggerdata->dbname,map->get_db_name(),1+(size_t)strlen(map->get_db_name()));
-  		mytriggerdata->tbname=new char[1+strlen(map->get_table_name())];
-		memset(mytriggerdata->tbname,'\0',1+strlen(map->get_table_name()));
-		strlcpy(mytriggerdata->tbname,map->get_table_name(),1+(size_t)strlen(map->get_table_name()));
-		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
-		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
-		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
-	}
+  }
 	//-------------TO PUSH TRIGGERDATA IN QUEUE ----------------------------
 		enqueue(mytriggerdata);
 	//----------------------------------------------------------------------
