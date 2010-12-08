@@ -1,0 +1,17 @@
+[mytrigger]
+host=10.210.74.143
+port=3306
+user=repl
+password=123qwe
+start-position=16051
+self-server-id=128
+#mytrigger-info=/tmp/mytrigger.info
+#daemon
+log-file=/var/log/mytri.log
+
+
+#system configure
+base64-output=auto
+verbose
+read-from-remote-server
+to-last-log
