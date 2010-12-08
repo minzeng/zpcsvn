@@ -6,6 +6,7 @@
 #include <pthread.h>
 #include <signal.h>
 #include "queue.h"
+#include "mystruct.h"
 /* my log */
 static FILE *log_file_p;
 char *log_file = (char*)"./mytrigger.log";
@@ -45,24 +46,6 @@ pthread_cond_t qready = PTHREAD_COND_INITIALIZER;
 uintmax_t qs = 0;
 int enqueue(void *);
 void *dequeue();
-
-/* mystruct.h DJ */
-struct MY_DATA {
-	void *data;
-	int type;
-	int length;
-};
-
-struct TRIGGER_DATA {
-	int ioperate_type;
-	char *logfile;
-	unsigned long log_pos;
-	int filednum;
-	char* dbname;
-	char* tbname;
-	struct MY_DATA* row_list;
-	struct MY_DATA* row_list_update;
-};
 
 char *conf_file = (char*)"./mytrigger.info";
 static FILE *conf_file_fd;

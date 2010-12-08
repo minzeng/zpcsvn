@@ -2095,7 +2095,7 @@ void* TRIGGER_process(void *args) {
 
 	void *hdl=dlopen(mytrigger_so, RTLD_NOW);
 	if(!hdl) {
-		MYLOG("dlopen %s faild", so);
+		MYLOG("dlopen %s faild", mytrigger_so);
 		exit(1);
 	}
 	HFP insert_p = (HFP)dlsym(hdl, "InsertProcess_NEW");
