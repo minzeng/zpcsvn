@@ -2197,12 +2197,12 @@ int main(int argc, char** argv)
 	if (access(conf_file, F_OK)) {
 		printf("create mytrigger info file[%s]\n", conf_file);
 		MYLOG("create mytrigger info file[%s]\n", conf_file);
-		conf_file_fd = fopen(conf_file, "w+");	
+		conf_file_fd = fopen(conf_file, "w+");
 		if (NULL == conf_file_fd) {
 			error(strerror(errno));
 			exit(1);
 		}
-		fprintf(conf_file_fd, "%s\n", *argv);	
+		fprintf(conf_file_fd, "%s\n", *argv);
 		strlcpy(current_log_name, *argv++, _POSIX_PATH_MAX + 1);
 		fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);
 		fprintf(conf_file_fd, "%s\n", host);
