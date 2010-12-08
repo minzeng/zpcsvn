@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <signal.h>
 #include "queue.h"
 /* my log */
 static FILE *log_file_p;
@@ -42,7 +43,7 @@ TAILQ_HEAD(,EVENT_ITEM) event_q_head;
 pthread_mutex_t q_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t qready = PTHREAD_COND_INITIALIZER;
 uintmax_t qs = 0;
-void enqueue(void *);
+int enqueue(void *);
 void *dequeue();
 
 /* mystruct.h DJ */
@@ -62,7 +63,7 @@ struct TRIGGER_DATA {
 	struct MY_DATA* row_list_update;
 };
 
-char *conf_file = (char*)"./mytigger.info";
+char *conf_file = (char*)"./mytrigger.info";
 static FILE *conf_file_fd;
 char current_log_name[_POSIX_PATH_MAX + 1];
 char master_host[_POSIX_PATH_MAX];
@@ -70,5 +71,8 @@ char master_user[_POSIX_PATH_MAX];
 char master_pass[_POSIX_PATH_MAX];
 bool is_daemonize = false;
 bool skip_slave_error = 0;
+
+int daemonize(int nochdir, int noclose);
+size_t strlcpy(char *dst, const char *src, size_t siz);
 
 #endif

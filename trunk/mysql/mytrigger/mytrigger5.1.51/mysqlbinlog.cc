@@ -1484,8 +1484,8 @@ static Exit_status dump_log_entries(const char* logname)
   print_event_info.verbose= short_form ? 0 : verbose;
 
   for (;;) {
-	rc= (remote_opt ? dump_remote_log_entries(&print_event_info_s, logname) :
-	    dump_local_log_entries(&print_event_info_s, logname));
+	rc= (remote_opt ? dump_remote_log_entries(&print_event_info, logname) :
+	    dump_local_log_entries(&print_event_info, logname));
 		
 	sleep(2);	
 	fprintf(stderr, "reconnect to master...\n");
