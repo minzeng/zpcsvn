@@ -2112,35 +2112,41 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
     my_b_printf(file, "### Row event for unknown table #%d", m_table_id);
     return;
   }
-  //----------------Creat TRIGGER_DATA By DJ------------------------
-  TRIGGER_DATA* mytriggerdata=new TRIGGER_DATA;
-  mytriggerdata->row_list=NULL;
-  mytriggerdata->row_list_update=NULL;
-  mytriggerdata->log_pos=0;
-  mytriggerdata->ioperate_type=0;
-  mytriggerdata->filednum=0;
-  mytriggerdata->dbname=NULL;
-  mytriggerdata->tbname=NULL;
+   //----------------Creat TRIGGER_DATA By DJ------------------------
+  TRIGGER_DATA* mytriggerdata;
   //----------------Creat DataList By DJ-------------------------------
-  
-  MY_DATA* my_row_list=new MY_DATA[m_width];
-  
+  MY_DATA* my_row_list;
   MY_DATA* my_row_list_update;
-  if (sql_clause2)
-  	{
-  my_row_list_update=new MY_DATA[m_width];
-  	}
-  for(int v=0;v<m_width;v++)
-  	{
-  		my_row_list[v].data=NULL;
-		if (sql_clause2)
-  		{
-  		my_row_list_update[v].data=NULL;
-		}
-  	}
   //----------------------------------------------------------------
   for (const uchar *value= m_rows_buf; value < m_rows_end; )
   {
+  //------------------------INIT ADD BY DJ---------------------------
+  		//----------------INIT TRIGGER_DATA --------------------------------
+		  mytriggerdata=new TRIGGER_DATA;
+		  mytriggerdata->row_list=NULL;
+		  mytriggerdata->row_list_update=NULL;
+		  mytriggerdata->log_pos=0;
+		  mytriggerdata->ioperate_type=0;
+		  mytriggerdata->filednum=0;
+		  mytriggerdata->dbname=NULL;
+		  mytriggerdata->tbname=NULL;
+		  mytriggerdata->logfile=NULL;
+		  //----------------INIT MY_DATA-------------------------------
+		  my_row_list=new MY_DATA[m_width];
+		  if (sql_clause2)
+		  	{
+		  my_row_list_update=new MY_DATA[m_width];
+		  	}
+		  for(int v=0;v<m_width;v++)
+		  	{
+		  		my_row_list[v].data=NULL;
+				if (sql_clause2)
+		  		{
+		  		my_row_list_update[v].data=NULL;
+				}
+		  	}
+		  //----------------------------------------------------------------
+  //------------------------END INIT---------------------------------
     size_t length;
     my_b_printf(file, "### %s %s.%s\n",
                       sql_command,
@@ -2164,93 +2170,62 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
   //----------To Use my_row_list-----------------------
   if(type_code==WRITE_ROWS_EVENT)
   {
-		/*char *so="./triggerso.so"; 
-		void *hdl=dlopen(so,RTLD_NOW); 
-		if(!hdl) exit(1); 
-		typedef int (*f_t)(const char* ,const char* ,int ,MY_DATA* );
-		dlerror();
-		f_t testfun=(f_t)dlsym(hdl,"InsertProcess"); 	
-		if(!testfun) exit(2); 
-		int test=testfun(map->get_db_name(),map->get_table_name(),(int)m_width,my_row_list); 
-		
-		dlclose(hdl);*/
 		mytriggerdata->row_list=my_row_list;
   		mytriggerdata->log_pos=log_pos;
   		mytriggerdata->ioperate_type=WRITE_ROWS_EVENT;
 		mytriggerdata->filednum=(int)m_width;
-  		mytriggerdata->dbname=new char[strlen(map->get_db_name())];
-		memcpy(mytriggerdata->dbname,map->get_db_name(),strlen(map->get_db_name()));
-  		mytriggerdata->tbname=new char[strlen(map->get_table_name())];
-		memcpy(mytriggerdata->tbname,map->get_table_name(),strlen(map->get_table_name()));
+  		mytriggerdata->dbname=new char[1+strlen(map->get_db_name())];
+		memset(mytriggerdata->dbname,'\0',1+strlen(map->get_db_name()));
+		strlcpy(mytriggerdata->dbname,map->get_db_name(),1+(size_t)strlen(map->get_db_name()));
+  		mytriggerdata->tbname=new char[1+strlen(map->get_table_name())];
+		memset(mytriggerdata->tbname,'\0',1+strlen(map->get_table_name()));
+		strlcpy(mytriggerdata->tbname,map->get_table_name(),1+(size_t)strlen(map->get_table_name()));
+		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
+		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
+		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
   	}
   if(type_code==DELETE_ROWS_EVENT)
   {
-		/*char *so="./triggerso.so"; 
-		void *hdl=dlopen(so,RTLD_NOW); 
-		if(!hdl) exit(1); 
-		typedef int (*f_t)(const char* ,const char* ,int ,MY_DATA* );
-		dlerror();
-		f_t testfun=(f_t)dlsym(hdl,"DeleteProcess"); 	
-		if(!testfun) exit(2); 
-		int test=testfun(map->get_db_name(),map->get_table_name(),(int)m_width,my_row_list); 
-		
-		dlclose(hdl);*/
 		mytriggerdata->row_list=my_row_list;
   		mytriggerdata->log_pos=log_pos;
   		mytriggerdata->ioperate_type=DELETE_ROWS_EVENT;
 		mytriggerdata->filednum=(int)m_width;
-  		mytriggerdata->dbname=new char[strlen(map->get_db_name())];
-		memcpy(mytriggerdata->dbname,map->get_db_name(),strlen(map->get_db_name()));
-  		mytriggerdata->tbname=new char[strlen(map->get_table_name())];
-		memcpy(mytriggerdata->tbname,map->get_table_name(),strlen(map->get_table_name()));
+  		mytriggerdata->dbname=new char[1+strlen(map->get_db_name())];
+		memset(mytriggerdata->dbname,'\0',1+strlen(map->get_db_name()));
+		strlcpy(mytriggerdata->dbname,map->get_db_name(),1+(size_t)strlen(map->get_db_name()));
+  		mytriggerdata->tbname=new char[1+strlen(map->get_table_name())];
+		memset(mytriggerdata->tbname,'\0',1+strlen(map->get_table_name()));
+		strlcpy(mytriggerdata->tbname,map->get_table_name(),1+(size_t)strlen(map->get_table_name()));
+		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
+		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
+		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
   	}
   if(type_code==UPDATE_ROWS_EVENT)
   {
-		/*char *so="./triggerso.so"; 
-		void *hdl=dlopen(so,RTLD_NOW); 
-		if(!hdl) exit(1); 
-		typedef int (*f_t)(const char* ,const char* ,int ,MY_DATA* ,MY_DATA* );
-		dlerror();
-		f_t testfun=(f_t)dlsym(hdl,"UpdateProcess"); 	
-		if(!testfun) exit(2); 
-		int test=testfun(map->get_db_name(),map->get_table_name(),(int)m_width,my_row_list,my_row_list_update); 
-		
-		dlclose(hdl);*/
 		mytriggerdata->row_list=my_row_list;
   		mytriggerdata->row_list_update=my_row_list_update;
   		mytriggerdata->log_pos=log_pos;
   		mytriggerdata->ioperate_type=UPDATE_ROWS_EVENT;
 		mytriggerdata->filednum=(int)m_width;
-  		mytriggerdata->dbname=new char[strlen(map->get_db_name())];
-		memcpy(mytriggerdata->dbname,map->get_db_name(),strlen(map->get_db_name()));
-  		mytriggerdata->tbname=new char[strlen(map->get_table_name())];
-		memcpy(mytriggerdata->tbname,map->get_table_name(),strlen(map->get_table_name()));
+  		mytriggerdata->dbname=new char[1+strlen(map->get_db_name())];
+		memset(mytriggerdata->dbname,'\0',1+strlen(map->get_db_name()));
+		strlcpy(mytriggerdata->dbname,map->get_db_name(),1+(size_t)strlen(map->get_db_name()));
+  		mytriggerdata->tbname=new char[1+strlen(map->get_table_name())];
+		memset(mytriggerdata->tbname,'\0',1+strlen(map->get_table_name()));
+		strlcpy(mytriggerdata->tbname,map->get_table_name(),1+(size_t)strlen(map->get_table_name()));
+		mytriggerdata->logfile=new char[1+strlen(current_log_name)];
+		memset(mytriggerdata->logfile,'\0',1+strlen(current_log_name));
+		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
 	}
+	//-------------TO PUSH TRIGGERDATA IN QUEUE ----------------------------
+		enqueue(mytriggerdata);
+	//----------------------------------------------------------------------
   }
   //----------------------------------------------------------------------
-  //-------------TO PUSH TRIGGERDATA IN QUEUE ----------------------------
-  //----------------------------------------------------------------------
-  enqueue(mytriggerdata);
 
 end:
-  //-------delete my_row_list-----------------
-  /*  for(int   n   =   0;   n   <   m_width;   n++) {
-		if(my_row_list[n].data!=NULL){
-        delete   my_row_list[n].data; }
-    	}
-	delete[]   my_row_list; */
-  //----------------------------------------
-  //-------delete my_row_list_update-----------------
-  /*if (sql_clause2)
-  	{
-  		for(int   m   =   0;   m   <   m_width;   m++){ 
-			if(my_row_list_update[m].data!=NULL){
-        	delete   my_row_list_update[m].data;} 
-  			}
-		delete[]   my_row_list_update; 
-  	}*/
-  //----------------------------------------
-  //DeleteTriggerData(mytriggerdata);
+  //-------------TO PUSH TRIGGERDATA IN QUEUE ----------------------------
+  //----------------------------------------------------------------------
   delete td;
 }
 
@@ -2281,6 +2256,7 @@ void Log_event::DeleteTriggerData(TRIGGER_DATA* mytriggerdata)
   	//----------------------------------------
   	delete[]   mytriggerdata->dbname;
 	delete[]   mytriggerdata->tbname;
+	delete[]   mytriggerdata->logfile;
 	delete mytriggerdata;
 	
 }

@@ -1106,12 +1106,13 @@ static struct my_option my_long_options[] =
    "Extract only binlog entries created by the server having the given id.",
    &server_id, &server_id, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-	//my add 
+	/*******************************************************************
+	 * zpc add 
+	 *******************************************************************/
   {"self-server-id", OPT_SERVER_ID,
    "The fake slave server id.",
    &self_server_id, &self_server_id, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-
   {"mytrigger-info", 905, "mytrigger conf", &conf_file, &conf_file,
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"daemon", 906, "run as daemon.",
@@ -1119,9 +1120,15 @@ static struct my_option my_long_options[] =
    0, 0},
   {"log-file", 907, "mytrigger log file", &log_file, &log_file,
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
-  {"skip-slave-error", 908, "Skip slave sql error",
+  {"mytrigger-so", 908, "mytrigger so file", &mytrigger_so, &mytrigger_so,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"skip-slave-error", 909, "Skip slave sql error",
    &skip_slave_error, &skip_slave_error, 0, GET_BOOL,
    NO_ARG, 0, 0, 0, 0, 0, 0},
+
+	/*******************************************************************
+	 * zpc add end
+	 *******************************************************************/
 
   {"set-charset", OPT_SET_CHARSET,
    "Add 'SET NAMES character_set' to the output.", &charset,
@@ -1696,6 +1703,9 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
       if (type == ROTATE_EVENT)
       {
         Rotate_log_event *rev= (Rotate_log_event *)ev;
+		/* zpc add */
+		memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
+		memcpy(current_log_name, rev->new_log_ident, rev->ident_len + 1);
         /*
           If this is a fake Rotate event, and not about our log, we can stop
           transfer. If this a real Rotate event (so it's not about our log,
@@ -2081,10 +2091,9 @@ end:
 /* zpc add queue data */
 void* TRIGGER_process(void *args) {
 	struct TRIGGER_DATA *td = NULL;
-	char *so = (char*)"./triggerso.so";
 	typedef int (*HFP)(struct TRIGGER_DATA*);
 
-	void *hdl=dlopen(so,RTLD_NOW);
+	void *hdl=dlopen(mytrigger_so, RTLD_NOW);
 	if(!hdl) {
 		MYLOG("dlopen %s faild", so);
 		exit(1);
@@ -2126,10 +2135,11 @@ void* TRIGGER_process(void *args) {
 		snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
 		FILE *ft = fopen(tmp, "w");
 		if (NULL == ft) {
-			MYLOG("cteate tmp mytrigger info file[%s] faild, mytrigger exit!", tmp);
+			MYLOG("create tmp mytrigger info file[%s] faild, mytrigger exit!",
+					tmp);
 			exit(1);
 		}
-		fprintf(ft, "%s\n", current_log_name);
+		fprintf(ft, "%s\n", td->logfile);
 		fprintf(ft, "%ju\n", (uintmax_t)td->log_pos);
 		start_position = td->log_pos;
 		fprintf(ft, "%s\n", host);

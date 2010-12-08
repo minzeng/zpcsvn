@@ -55,6 +55,7 @@ struct MY_DATA {
 
 struct TRIGGER_DATA {
 	int ioperate_type;
+	char *logfile;
 	unsigned long log_pos;
 	int filednum;
 	char* dbname;
@@ -71,6 +72,8 @@ char master_user[_POSIX_PATH_MAX];
 char master_pass[_POSIX_PATH_MAX];
 bool is_daemonize = false;
 bool skip_slave_error = 0;
+
+char *mytrigger_so = (char*)"./mytrigger.so";
 
 int daemonize(int nochdir, int noclose);
 size_t strlcpy(char *dst, const char *src, size_t siz);
