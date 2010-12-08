@@ -2196,7 +2196,7 @@ int main(int argc, char** argv)
 	memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
 	if (access(conf_file, F_OK)) {
 		printf("create mytrigger info file[%s]\n", conf_file);
-		MYLOG("create mytrigger info file[%s\n", conf_file);
+		MYLOG("create mytrigger info file[%s]\n", conf_file);
 		conf_file_fd = fopen(conf_file, "w+");	
 		if (NULL == conf_file_fd) {
 			error(strerror(errno));
