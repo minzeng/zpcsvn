@@ -1,3 +1,7 @@
+#include <unistd.h>
+#include <stdio.h>
+#include <inttypes.h>
+#include <stdlib.h>
 struct MY_DATA {
 	void *data;
 	int type;
