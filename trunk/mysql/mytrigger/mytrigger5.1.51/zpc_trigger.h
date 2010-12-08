@@ -62,4 +62,13 @@ struct TRIGGER_DATA {
 	struct MY_DATA* row_list_update;
 };
 
+char *conf_file = (char*)"./mytigger.info";
+static FILE *conf_file_fd;
+char current_log_name[_POSIX_PATH_MAX + 1];
+char master_host[_POSIX_PATH_MAX];
+char master_user[_POSIX_PATH_MAX];
+char master_pass[_POSIX_PATH_MAX];
+bool is_daemonize = false;
+bool skip_slave_error = 0;
+
 #endif

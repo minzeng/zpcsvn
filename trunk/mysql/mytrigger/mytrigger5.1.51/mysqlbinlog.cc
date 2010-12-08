@@ -56,7 +56,7 @@ static FILE *result_file;
 #ifndef DBUG_OFF
 static const char* default_dbug_option = "d:t:o,/tmp/mysqlbinlog.trace";
 #endif
-static const char *load_default_groups[]= { "mysqlbinlog","client",0 };
+static const char *load_default_groups[]= { "mysqlbinlog","mytrigger",0 };
 
 static void error(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
 static void warning(const char *format, ...) ATTRIBUTE_FORMAT(printf, 1, 2);
@@ -318,6 +318,7 @@ File Load_log_processor::prepare_new_file_for_old_format(Load_log_event *le,
   if ((file= create_unique_file(filename,tail)) < 0)
   {
     error("Could not construct local filename %s.",filename);
+    MYLOG("Could not construct local filename %s.",filename);
     return -1;
   }
   
@@ -353,6 +354,7 @@ Exit_status Load_log_processor::load_old_format_file(NET* net,
   if (my_net_write(net, buf, server_fname_len +2) || net_flush(net))
   {
     error("Failed requesting the remote dump of %s.", server_fname);
+    MYLOG("Failed requesting the remote dump of %s.", server_fname);
     return ERROR_STOP;
   }
   
@@ -364,6 +366,7 @@ Exit_status Load_log_processor::load_old_format_file(NET* net,
       if (my_net_write(net, (uchar*) "", 0) || net_flush(net))
       {
         error("Failed sending the ack packet.");
+        MYLOG("Failed sending the ack packet.");
         return ERROR_STOP;
       }
       /*
@@ -376,12 +379,14 @@ Exit_status Load_log_processor::load_old_format_file(NET* net,
     else if (packet_len == packet_error)
     {
       error("Failed reading a packet during the dump of %s.", server_fname);
+      MYLOG("Failed reading a packet during the dump of %s.", server_fname);
       return ERROR_STOP;
     }
     
     if (packet_len > UINT_MAX)
     {
       error("Illegal length of packet read from net.");
+      MYLOG("Illegal length of packet read from net.");
       return ERROR_STOP;
     }
     if (my_write(file, (uchar*) net->read_pos, 
@@ -429,6 +434,7 @@ Exit_status Load_log_processor::process_first_event(const char *bname,
   if (!(fname= (char*) my_malloc(full_len,MYF(MY_WME))))
   {
     error("Out of memory.");
+    MYLOG("Out of memory.");
     delete ce;
     DBUG_RETURN(ERROR_STOP);
   }
@@ -443,6 +449,8 @@ Exit_status Load_log_processor::process_first_event(const char *bname,
   {
     error("Could not construct local filename %s%s.",
           target_dir_name,bname);
+    MYLOG("Could not construct local filename %s%s.",
+          target_dir_name,bname);
     delete ce;
     DBUG_RETURN(ERROR_STOP);
   }
@@ -453,6 +461,7 @@ Exit_status Load_log_processor::process_first_event(const char *bname,
   if (set_dynamic(&file_names, (uchar*)&rec, file_id))
   {
     error("Out of memory.");
+    MYLOG("Out of memory.");
     delete ce;
     DBUG_RETURN(ERROR_STOP);
   }
@@ -463,11 +472,13 @@ Exit_status Load_log_processor::process_first_event(const char *bname,
   if (my_write(file, (uchar*)block, block_len, MYF(MY_WME|MY_NABP)))
   {
     error("Failed writing to file.");
+    MYLOG("Failed writing to file.");
     retval= ERROR_STOP;
   }
   if (my_close(file, MYF(MY_WME)))
   {
     error("Failed closing file.");
+    MYLOG("Failed closing file.");
     retval= ERROR_STOP;
   }
   DBUG_RETURN(retval);
@@ -548,16 +559,19 @@ Exit_status Load_log_processor::process(Append_block_log_event *ae)
 			O_APPEND|O_BINARY|O_WRONLY,MYF(MY_WME))) < 0))
     {
       error("Failed opening file %s", fname);
+      MYLOG("Failed opening file %s", fname);
       DBUG_RETURN(ERROR_STOP);
     }
     if (my_write(file,(uchar*)ae->block,ae->block_len,MYF(MY_WME|MY_NABP)))
     {
       error("Failed writing to file %s", fname);
+      MYLOG("Failed writing to file %s", fname);
       retval= ERROR_STOP;
     }
     if (my_close(file,MYF(MY_WME)))
     {
       error("Failed closing file %s", fname);
+      MYLOG("Failed closing file %s", fname);
       retval= ERROR_STOP;
     }
     DBUG_RETURN(retval);
@@ -652,6 +666,7 @@ write_event_header_and_base64(Log_event *ev, FILE *result_file,
       copy_event_cache_to_file_and_reinit(body, result_file))
   {
     error("Error writing event to file.");
+    MYLOG("Error writing event to file.");
     DBUG_RETURN(ERROR_STOP);
   }
   DBUG_RETURN(OK_CONTINUE);
@@ -848,6 +863,9 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
         error("Attempting to dump binlog '%s', which was not closed properly. "
               "Most probably, mysqld is still writing it, or it crashed. "
               "Rerun with --force-if-open to ignore this problem.", logname);
+        MYLOG("Attempting to dump binlog '%s', which was not closed properly. "
+              "Most probably, mysqld is still writing it, or it crashed. "
+              "Rerun with --force-if-open to ignore this problem.", logname);
         DBUG_RETURN(ERROR_STOP);
       }
       break;
@@ -946,16 +964,25 @@ Exit_status process_event(PRINT_EVENT_INFO *print_event_info, Log_event *ev,
       if (!print_event_info->printed_fd_event && !short_form)
       {
         const char* type_str= ev->get_type_str();
-        if (opt_base64_output_mode == BASE64_OUTPUT_NEVER)
+        if (opt_base64_output_mode == BASE64_OUTPUT_NEVER) {
           error("--base64-output=never specified, but binlog contains a "
                 "%s event which must be printed in base64.",
                 type_str);
-        else
+          MYLOG("--base64-output=never specified, but binlog contains a "
+                "%s event which must be printed in base64.",
+                type_str);
+		} else {
           error("malformed binlog: it does not contain any "
                 "Format_description_log_event. I now found a %s event, which "
                 "is not safe to process without a "
                 "Format_description_log_event.",
                 type_str);
+          MYLOG("malformed binlog: it does not contain any "
+                "Format_description_log_event. I now found a %s event, which "
+                "is not safe to process without a "
+                "Format_description_log_event.",
+                type_str);
+		}
         goto err;
       }
       /* FALL THROUGH */
@@ -1079,6 +1106,23 @@ static struct my_option my_long_options[] =
    "Extract only binlog entries created by the server having the given id.",
    &server_id, &server_id, 0, GET_ULONG,
    REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+	//my add 
+  {"self-server-id", OPT_SERVER_ID,
+   "The fake slave server id.",
+   &self_server_id, &self_server_id, 0, GET_ULONG,
+   REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+
+  {"mytrigger-info", 905, "mytrigger conf", &conf_file, &conf_file,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"daemon", 906, "run as daemon.",
+   &is_daemonize, &is_daemonize, 0, GET_BOOL, NO_ARG, 0, 0, 0, 0,
+   0, 0},
+  {"log-file", 907, "mytrigger log file", &log_file, &log_file,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"skip-slave-error", 908, "Skip slave sql error",
+   &skip_slave_error, &skip_slave_error, 0, GET_BOOL,
+   NO_ARG, 0, 0, 0, 0, 0, 0},
+
   {"set-charset", OPT_SET_CHARSET,
    "Add 'SET NAMES character_set' to the output.", &charset,
    &charset, 0, GET_STR, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
@@ -1262,6 +1306,7 @@ static my_time_t convert_str_to_timestamp(const char* str)
       MYSQL_TIMESTAMP_DATETIME || was_cut)
   {
     error("Incorrect date and time argument: %s", str);
+    MYLOG("Incorrect date and time argument: %s", str);
     exit(1);
   }
   /*
@@ -1361,7 +1406,6 @@ get_one_option(int optid, const struct my_option *opt __attribute__((unused)),
 static int parse_args(int *argc, char*** argv)
 {
   int ho_error;
-
   result_file = stdout;
   if ((ho_error=handle_options(argc, argv, my_long_options, get_one_option)))
     exit(ho_error);
@@ -1399,7 +1443,10 @@ static Exit_status safe_connect()
 #endif
   if (!mysql_real_connect(mysql, host, user, pass, 0, port, sock, 0))
   {
-    error("Failed on connect: %s", mysql_error(mysql));
+	error("connect to master.[%s:%d] user: %s", host, port, user);
+    error("Failed on connect to master: %s", mysql_error(mysql));
+	MYLOG("connect to master.[%s:%d] user: %s", host, port, user);
+    MYLOG("Failed on connect to master: %s", mysql_error(mysql));
     return ERROR_STOP;
   }
   mysql->reconnect= 1;
@@ -1436,9 +1483,21 @@ static Exit_status dump_log_entries(const char* logname)
   
   print_event_info.verbose= short_form ? 0 : verbose;
 
-  rc= (remote_opt ? dump_remote_log_entries(&print_event_info, logname) :
-       dump_local_log_entries(&print_event_info, logname));
-
+  for (;;) {
+	rc= (remote_opt ? dump_remote_log_entries(&print_event_info_s, logname) :
+	    dump_local_log_entries(&print_event_info_s, logname));
+		
+	sleep(2);	
+	fprintf(stderr, "reconnect to master...\n");
+	MYLOG("reconnect to master...\n");
+	MYLOG("log name: %s", current_log_name);
+	MYLOG("position: %ju", (uintmax_t)start_position);
+	MYLOG("master host: %s", host);
+	MYLOG("master user: %s", user);
+	MYLOG("master pass: %s", pass);
+	MYLOG("master port: %ju", (uintmax_t)port);
+	MYLOG("self server id: %ju", (uintmax_t)self_server_id);
+  }
   /* Set delimiter back to semicolon */
   fprintf(result_file, "DELIMITER ;\n");
   strmov(print_event_info.delimiter, ";");
@@ -1467,11 +1526,15 @@ static Exit_status check_master_version()
   {
     error("Could not find server version: "
           "Query failed when checking master version: %s", mysql_error(mysql));
+    MYLOG("Could not find server version: "
+          "Query failed when checking master version: %s", mysql_error(mysql));
     return ERROR_STOP;
   }
   if (!(row = mysql_fetch_row(res)))
   {
     error("Could not find server version: "
+          "Master returned no rows for SELECT VERSION().");
+    MYLOG("Could not find server version: "
           "Master returned no rows for SELECT VERSION().");
     goto err;
   }
@@ -1479,6 +1542,8 @@ static Exit_status check_master_version()
   if (!(version = row[0]))
   {
     error("Could not find server version: "
+          "Master reported NULL for the version.");
+    MYLOG("Could not find server version: "
           "Master reported NULL for the version.");
     goto err;
   }
@@ -1504,11 +1569,14 @@ static Exit_status check_master_version()
     glob_description_event= NULL;
     error("Could not find server version: "
           "Master reported unrecognized MySQL version '%s'.", version);
+    MYLOG("Could not find server version: "
+          "Master reported unrecognized MySQL version '%s'.", version);
     goto err;
   }
   if (!glob_description_event || !glob_description_event->is_valid())
   {
     error("Failed creating Format_description_log_event; out of memory?");
+    MYLOG("Failed creating Format_description_log_event; out of memory?");
     goto err;
   }
 
@@ -1570,6 +1638,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
   if (tlen > UINT_MAX) 
   {
     error("Log name too long.");
+    MYLOG("Log name too long.");
     DBUG_RETURN(ERROR_STOP);
   }
   logname_len = (uint) tlen;
@@ -1578,6 +1647,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
   if (simple_command(mysql, COM_BINLOG_DUMP, buf, logname_len + 10, 1))
   {
     error("Got fatal error sending the log dump command.");
+    MYLOG("Got fatal error sending the log dump command.");
     DBUG_RETURN(ERROR_STOP);
   }
 
@@ -1590,6 +1660,7 @@ static Exit_status dump_remote_log_entries(PRINT_EVENT_INFO *print_event_info,
     if (len == packet_error)
     {
       error("Got error reading packet from server: %s", mysql_error(mysql));
+      MYLOG("Got error reading packet from server: %s", mysql_error(mysql));
       DBUG_RETURN(ERROR_STOP);
     }
     if (len < 8 && net->read_pos[0] == 254)
@@ -2007,6 +2078,7 @@ end:
   return retval;
 }
 
+/* zpc add queue data */
 void* TRIGGER_process(void *args) {
 	struct TRIGGER_DATA *td = NULL;
 	char *so = (char*)"./triggerso.so";
@@ -2033,6 +2105,7 @@ void* TRIGGER_process(void *args) {
 		exit(1);
 	}
 	for (;;) {
+		/* get data from queue */
 		td = (TRIGGER_DATA *)dequeue();
 		switch (td->ioperate_type) {
 			case WRITE_ROWS_EVENT:
@@ -2047,7 +2120,32 @@ void* TRIGGER_process(void *args) {
 			default:
 				MYLOG("unkonw type %d", td->ioperate_type);
 		}
+
+		/* record mytrigger info */
+		char tmp[_POSIX_PATH_MAX];
+		snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
+		FILE *ft = fopen(tmp, "w");
+		if (NULL == ft) {
+			MYLOG("cteate tmp mytrigger info file[%s] faild, mytrigger exit!", tmp);
+			exit(1);
+		}
+		fprintf(ft, "%s\n", current_log_name);
+		fprintf(ft, "%ju\n", (uintmax_t)td->log_pos);
+		start_position = td->log_pos;
+		fprintf(ft, "%s\n", host);
+		fprintf(ft, "%s\n", user);
+		fprintf(ft, "%s\n", pass);
+		fprintf(ft, "%d\n", port);
+		fprintf(ft, "%ju\n", (uintmax_t)self_server_id);
+		fclose(ft);
+		if (rename(tmp, conf_file) != 0) {
+			MYLOG("rename(%s, %s) faild, mytrigger exit!", tmp, conf_file);
+			exit(1);
+		}
+
+		/* free data memory */
 		Log_event::DeleteTriggerData(td);
+
 	}
 	dlclose(hdl);
 }
@@ -2079,8 +2177,92 @@ int main(int argc, char** argv)
 	 * zpc add initialization 
 	 *
 	 */
-	MYLOG_INIT();
+	MYLOG_INIT();/* initialize log, 
+					you MUST invoke 
+					MYLOG_INIT() before MYLOG() */
 	TAILQ_INIT(&event_q_head);
+
+	char buf[1024] = {0};
+	memset(current_log_name, 0, _POSIX_PATH_MAX + 1);
+	if (access(conf_file, F_OK)) {
+		printf("create mytrigger info file[%s]\n", conf_file);
+		MYLOG("create mytrigger info file[%s\n", conf_file);
+		conf_file_fd = fopen(conf_file, "w+");	
+		if (NULL == conf_file_fd) {
+			error(strerror(errno));
+			exit(1);
+		}
+		fprintf(conf_file_fd, "%s\n", *argv);	
+		strlcpy(current_log_name, *argv++, _POSIX_PATH_MAX + 1);
+		fprintf(conf_file_fd, "%ju\n", (uintmax_t)start_position);
+		fprintf(conf_file_fd, "%s\n", host);
+		fprintf(conf_file_fd, "%s\n", user);
+		fprintf(conf_file_fd, "%s\n", pass);
+		fprintf(conf_file_fd, "%d\n", port);
+		fprintf(conf_file_fd, "%lu\n", self_server_id);
+		fflush(conf_file_fd);
+	} else { // file exists
+		printf("read mytrigger info file[%s]\n", conf_file);
+		MYLOG("read mytrigger info file[%s]\n", conf_file);
+		conf_file_fd = fopen(conf_file, "r+");
+		if (NULL == conf_file_fd) {
+			error(strerror(errno));
+		}
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("log name: %s\n", buf);
+		strlcpy(current_log_name, buf, _POSIX_PATH_MAX + 1);
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("position: %s\n", buf);
+		start_position = (ulonglong)strtoumax(buf, NULL, 10);
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("master host: %s\n", buf);
+		strlcpy(master_host, buf, sizeof(master_host));
+		host = master_host;
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("master user: %s\n", buf);
+		strlcpy(master_user, buf, sizeof(master_user));
+		user = master_user;
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("master pass: %s\n", buf);
+		strlcpy(master_pass, buf, sizeof(master_pass));
+		pass = master_pass;
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("master port: %s\n", buf);
+		port = (int)strtoumax(buf, NULL, 10);
+		fgets(buf, sizeof(buf), conf_file_fd);
+		buf[strlen(buf) - 1] = '\0';
+		//printf("self server id: %s\n", buf);
+		self_server_id = (int)strtoumax(buf, NULL, 10);
+		//printf("\n");
+	}
+	/* zpc add */
+	printf("log name: %s\n", current_log_name);
+	printf("position: %ju\n", (uintmax_t)start_position);
+	printf("master host: %s\n", host);
+	printf("master user: %s\n", user);
+	printf("master pass: %s\n", pass);
+	printf("master port: %ju\n", (uintmax_t)port);
+	printf("self server id: %ju\n", (uintmax_t)self_server_id);
+	printf("\n");
+
+	MYLOG("log name: %s", current_log_name);
+	MYLOG("position: %ju", (uintmax_t)start_position);
+	MYLOG("master host: %s", host);
+	MYLOG("master user: %s", user);
+	MYLOG("master pass: %s", pass);
+	MYLOG("master port: %ju", (uintmax_t)port);
+	MYLOG("self server id: %ju", (uintmax_t)self_server_id);
+
+	if (is_daemonize) {
+		daemonize(1, 0);
+	}
+
 	int err;
 	pthread_t tid;
 	err = pthread_create(&tid, NULL, TRIGGER_process, NULL);
@@ -2138,7 +2320,7 @@ int main(int argc, char** argv)
   {
     if (argc == 0) // last log, --stop-position applies
       stop_position= save_stop_position;
-    if ((retval= dump_log_entries(*argv++)) != OK_CONTINUE)
+    if ((retval= dump_log_entries(current_log_name)) != OK_CONTINUE)
       break;
 
     // For next log, --start-position does not apply
