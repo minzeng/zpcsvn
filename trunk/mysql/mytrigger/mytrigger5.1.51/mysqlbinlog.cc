@@ -2131,26 +2131,28 @@ void* TRIGGER_process(void *args) {
 		}
 
 		/* record mytrigger info */
-		char tmp[_POSIX_PATH_MAX];
-		snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
-		FILE *ft = fopen(tmp, "w");
-		if (NULL == ft) {
-			MYLOG("create tmp mytrigger info file[%s] faild, mytrigger exit!",
-					tmp);
-			exit(1);
-		}
-		fprintf(ft, "%s\n", td->logfile);
-		fprintf(ft, "%ju\n", (uintmax_t)td->log_pos);
-		start_position = td->log_pos;
-		fprintf(ft, "%s\n", host);
-		fprintf(ft, "%s\n", user);
-		fprintf(ft, "%s\n", pass);
-		fprintf(ft, "%d\n", port);
-		fprintf(ft, "%ju\n", (uintmax_t)self_server_id);
-		fclose(ft);
-		if (rename(tmp, conf_file) != 0) {
-			MYLOG("rename(%s, %s) faild, mytrigger exit!", tmp, conf_file);
-			exit(1);
+		if (td->b_islast) {
+			char tmp[_POSIX_PATH_MAX];
+			snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
+			FILE *ft = fopen(tmp, "w");
+			if (NULL == ft) {
+				MYLOG("create tmp mytrigger info file[%s] faild, mytrigger exit!",
+						tmp);
+				exit(1);
+			}
+			fprintf(ft, "%s\n", td->logfile);
+			fprintf(ft, "%ju\n", (uintmax_t)td->log_pos);
+			start_position = td->log_pos;
+			fprintf(ft, "%s\n", host);
+			fprintf(ft, "%s\n", user);
+			fprintf(ft, "%s\n", pass);
+			fprintf(ft, "%d\n", port);
+			fprintf(ft, "%ju\n", (uintmax_t)self_server_id);
+			fclose(ft);
+			if (rename(tmp, conf_file) != 0) {
+				MYLOG("rename(%s, %s) faild, mytrigger exit!", tmp, conf_file);
+				exit(1);
+			}
 		}
 
 		/* free data memory */
