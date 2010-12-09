@@ -2131,7 +2131,7 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
 		  mytriggerdata->dbname=NULL;
 		  mytriggerdata->tbname=NULL;
 		  mytriggerdata->logfile=NULL;
-		  mytriggerdata->b_islast=false;
+		  mytriggerdata->b_islast=0;
 		  //----------------INIT MY_DATA-------------------------------
 		  my_row_list=new MY_DATA[m_width];
 		  if (sql_clause2)
@@ -2184,7 +2184,7 @@ void Rows_log_event::print_verbose(IO_CACHE *file,
 		strlcpy(mytriggerdata->logfile,current_log_name,1+(size_t)strlen(current_log_name));
 		if(value+length >= m_rows_end)
 		{
-			mytriggerdata->b_islast=true;
+			mytriggerdata->b_islast=1;
 		}
   if(type_code==WRITE_ROWS_EVENT)
   {
