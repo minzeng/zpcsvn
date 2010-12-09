@@ -17,5 +17,6 @@ struct TRIGGER_DATA {
 	char* tbname;
 	struct MY_DATA* row_list;
 	struct MY_DATA* row_list_update;
+	bool b_islast;
 };
 
