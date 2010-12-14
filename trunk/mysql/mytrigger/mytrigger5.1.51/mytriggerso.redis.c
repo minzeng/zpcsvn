@@ -27,8 +27,11 @@ enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 unsigned int j;
 static redisContext *c = NULL; 
 redisReply *reply;
-char list_key[64];
-char buf[64];
+
+#define RKEY_LEN 128
+#define RBUf_LEN 1024
+char rkey[RKEY_LEN];
+char buf[RBUf_LEN];
 
 extern char *redis_ip;
 extern int redis_port;
@@ -49,6 +52,9 @@ deinit_proc(char *err_msg) {
 	return 0;
 }
 
+#define PROC_DB "user"
+#define PROC_TABLE "user_base"
+
 int i_proc(struct TRIGGER_DATA* data)
 {
 	int i=0;
@@ -56,84 +62,110 @@ int i_proc(struct TRIGGER_DATA* data)
 	printf("^^^^^^^^^^^Table name is: %s^^^^^^^^^^^^\n",data->tbname);
 	printf("^^^^^^^^^^^Filed num  is: %d^^^^^^^^^^^^\n",data->filednum);
 
-	/* process attention only */
-	if (memcmp(data->dbname, "attention", sizeof("attention"))) {
+
+	/* select db */ /* select table */
+	if (memcmp(data->dbname, PROC_DB, sizeof(PROC_DB))
+		&& memcmp(data->tbname, PROC_TABLE, sizeof(PROC_TABLE))) {
 		return -1;
 	}
 
-/*	if (NULL == c) {
-		c = redisConnect((char*)"127.0.0.1", 9736);
-		if (c->err) {
-			printf("Connection error: %s\n", c->errstr);
-			exit(1);
+	for(i=0 ; i < data->filednum; i++) {
+		if(NULL == data->row_list[i].data) {
+			printf("^^^^^^^^^^^NO DATA^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",data->row_list[i].type);
+			continue;
 		}
-	}*/
-
-	for(i=0;i<data->filednum;i++)
-	{
-			if(data->row_list[i].data==NULL)
-				{
-				printf("^^^^^^^^^^^NO DATA^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",data->row_list[i].type);
-				continue;
-				}
-			switch(data->row_list[i].type)
-			{
-			case MYSQL_TYPE_SHORT:
-			case MYSQL_TYPE_LONG:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)data->row_list[i].data));
-				break;
-			case MYSQL_TYPE_FLOAT:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((float *)data->row_list[i].data));
-				break;
-			case MYSQL_TYPE_DOUBLE:
-				printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((double *)data->row_list[i].data));
-				break;
-			case MYSQL_TYPE_VARCHAR:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-				break;
-			case MYSQL_TYPE_BLOB:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-				break;
-			case MYSQL_TYPE_DATETIME:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-				break;
-			case MYSQL_TYPE_LONGLONG:
-				if (0 == i) {
-					snprintf(list_key, 64, "%ju", *(intmax_t*)data->row_list[i].data);
-				} else {
-					snprintf(buf, 64, "%ju", *(intmax_t*)data->row_list[i].data);
-					reply = redisCommand(c,"LPUSH %s %s", list_key, buf);
-					freeReplyObject(reply);
-				}
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
-				break;
-			case MYSQL_TYPE_TIMESTAMP:
-				if(data->row_list[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
-				}else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-					}
-				break;
-			case MYSQL_TYPE_STRING:
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-				break;
-			case MYSQL_TYPE_TINY:
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)data->row_list[i].data));
-				break;
-			case MYSQL_TYPE_DATE:
-				if(data->row_list[i].length>0){
-				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));}
-				else{
-				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
-					}
-				break;
-			default:
-				printf("^^^^^^^^^^^ERR^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",data->row_list[i].type);
-				break;
+		switch(data->row_list[i].type) {
+		case MYSQL_TYPE_SHORT:
+		case MYSQL_TYPE_LONG:
+			snprintf(buf, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)data->row_list[i].data));
+			break;
+		case MYSQL_TYPE_FLOAT:
+			snprintf(buf, RBUf_LEN, "%-20g", *((float *)data->row_list[i].data));
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((float *)data->row_list[i].data));
+			break;
+		case MYSQL_TYPE_DOUBLE:
+			snprintf(buf, RBUf_LEN, "%-.20g", *((double *)data->row_list[i].data));
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %f^^^^^^^^^^^^\n",i+1,*((double *)data->row_list[i].data));
+			break;
+		case MYSQL_TYPE_VARCHAR:
+			snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			break;
+		case MYSQL_TYPE_BLOB:
+			snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			break;
+		case MYSQL_TYPE_DATETIME:
+			snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			break;
+		case MYSQL_TYPE_LONGLONG:
+			if (0 == i) {
+				snprintf(rkey, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+			} else {
+				snprintf(buf, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+				reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+				freeReplyObject(reply);
 			}
+			printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
+			break;
+		case MYSQL_TYPE_TIMESTAMP:
+			if(data->row_list[i].length>0){
+				snprintf(buf, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+				reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+				freeReplyObject(reply);
+				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));
+			}else{
+				snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+				reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+				freeReplyObject(reply);
+				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			}
+			break;
+		case MYSQL_TYPE_STRING:
+			snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			break;
+		case MYSQL_TYPE_TINY:
+			snprintf(buf, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+			reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+			freeReplyObject(reply);
+			printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((int *)data->row_list[i].data));
+			break;
+		case MYSQL_TYPE_DATE:
+			if(data->row_list[i].length>0){
+				snprintf(buf, RBUf_LEN, "%ju", *(intmax_t*)data->row_list[i].data);
+				reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+				freeReplyObject(reply);
+				printf("^^^^^^^^^^^Data%d  is: %d^^^^^^^^^^^^\n",i+1,*((long long *)data->row_list[i].data));}
+			else{
+				snprintf(buf, RBUf_LEN, "%s", data->row_list[i].data);
+				reply = redisCommand(c,"HSET %s $%d %s", rkey, i, buf);
+				freeReplyObject(reply);
+				printf("^^^^^^^^^^^Data%d  is: %s^^^^^^^^^^^^\n",i+1,data->row_list[i].data);
+			}
+			break;
+		default:
+			printf("^^^^^^^^^^^ERR^^^^^^^^^^^^^%d^^^^^^^^^^^^^^^^^^^^^^^\n",data->row_list[i].type);
+			break;
+		}
 	}
 	printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
-	//redisFree(c);
 	return data->filednum;
 }
 
