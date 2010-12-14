@@ -1125,6 +1125,11 @@ static struct my_option my_long_options[] =
   {"skip-slave-error", 909, "Skip slave sql error",
    &skip_slave_error, &skip_slave_error, 0, GET_BOOL,
    NO_ARG, 0, 0, 0, 0, 0, 0},
+  {"redis-ip", 910, "redis server ip address", &redis_port, &redis_port,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
+  {"redis-port", 911, "redis server port",
+   &redis_port, &redis_port, 0, GET_INT, REQUIRED_ARG,
+   0, 0, 0, 0, 0, 0},
 
 	/*******************************************************************
 	 * zpc add end
@@ -2091,6 +2096,7 @@ end:
 /* zpc add queue data */
 void* TRIGGER_process(void *args) {
 	struct TRIGGER_DATA *td = NULL;
+	typedef int (*IFP)(char*);
 	typedef int (*HFP)(struct TRIGGER_DATA*);
 
 	void *hdl=dlopen(mytrigger_so, RTLD_NOW);
@@ -2098,19 +2104,34 @@ void* TRIGGER_process(void *args) {
 		MYLOG("dlopen %s faild", mytrigger_so);
 		exit(1);
 	}
-	HFP insert_p = (HFP)dlsym(hdl, "InsertProcess_NEW");
+	IFP init_p = (IFP)dlsym(hdl, "init_proc");
+	if (!init_p) {
+		MYLOG("dlsym init_proc faild");
+		exit(1);
+	}
+	IFP deinit_p = (IFP)dlsym(hdl, "deinti_proc");
+	if (!deinit_p) {
+		MYLOG("dlsym deinit_proc faild");
+		exit(1);
+	}
+	HFP insert_p = (HFP)dlsym(hdl, "i_proc");
 	if (!insert_p) {
-		MYLOG("dlsym InsertProcess_NEW faild");
+		MYLOG("dlsym i_proc faild");
 		exit(1);
 	}
-	HFP delete_p = (HFP)dlsym(hdl, "DeleteProcess_NEW");
+	HFP delete_p = (HFP)dlsym(hdl, "d_proc");
 	if (!delete_p) {
-		MYLOG("dlsym DeleteProcess_NEW faild");
+		MYLOG("dlsym d_proc faild");
 		exit(1);
 	}
-	HFP update_p = (HFP)dlsym(hdl, "UpdateProcess_NEW");
+	HFP update_p = (HFP)dlsym(hdl, "u_proc");
 	if (!update_p) {
-		MYLOG("dlsym UpdateProcess_NEW faild");
+		MYLOG("dlsym u_proc faild");
+		exit(1);
+	}
+
+	if (init_p(err_msg) != 0) {
+		MYLOG("init_proc faild. msg: %s", err_msg);
 		exit(1);
 	}
 	for (;;) {
@@ -2136,8 +2157,8 @@ void* TRIGGER_process(void *args) {
 			snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
 			FILE *ft = fopen(tmp, "w");
 			if (NULL == ft) {
-				MYLOG("create tmp mytrigger info file[%s] faild, mytrigger exit!",
-						tmp);
+				MYLOG("create tmp mytrigger info file[%s] faild, "
+					"mytrigger exit!", tmp);
 				exit(1);
 			}
 			fprintf(ft, "%s\n", td->logfile);
@@ -2158,6 +2179,10 @@ void* TRIGGER_process(void *args) {
 		/* free data memory */
 		Log_event::DeleteTriggerData(td);
 
+	}
+	if (deinit_p(err_msg) != 0) {
+		MYLOG("deinit_proc faild. msg: %s", err_msg);
+		exit(1);
 	}
 	dlclose(hdl);
 }

@@ -30,15 +30,26 @@ redisReply *reply;
 char list_key[64];
 char buf[64];
 
-int init_redis() {
-	c = redisConnect((char*)"127.0.0.1", 9736);
+extern char *redis_ip;
+extern int redis_port;
+
+int
+init_proc(char *err_msg) {
+	c = redisConnect(redis_ip, redis_port);
 	if (c->err) {
-	    printf("Connection error: %s\n", c->errstr);
-	    exit(1);
+		LOG(err_msg, "Connection error: %s\n", c->errstr);
+		return -1;
 	}
+	return 0;
 }
 
-int InsertProcess_NEW(struct TRIGGER_DATA* data)
+int
+deinit_proc(char *err_msg) {
+	redisFree(c);
+	return 0;
+}
+
+int i_proc(struct TRIGGER_DATA* data)
 {
 	int i=0;
 	printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",data->dbname);
@@ -50,13 +61,13 @@ int InsertProcess_NEW(struct TRIGGER_DATA* data)
 		return -1;
 	}
 
-	if (NULL == c) {
+/*	if (NULL == c) {
 		c = redisConnect((char*)"127.0.0.1", 9736);
 		if (c->err) {
 			printf("Connection error: %s\n", c->errstr);
 			exit(1);
 		}
-	}
+	}*/
 
 	for(i=0;i<data->filednum;i++)
 	{
@@ -126,7 +137,7 @@ int InsertProcess_NEW(struct TRIGGER_DATA* data)
 	return data->filednum;
 }
 
-int DeleteProcess_NEW(struct TRIGGER_DATA* data)
+int d_proc(struct TRIGGER_DATA* data)
 {
 		int i=0;
 	printf("^^^^^^^^^^^Database   is: %s^^^^^^^^^^^^\n",data->dbname);
@@ -192,7 +203,7 @@ int DeleteProcess_NEW(struct TRIGGER_DATA* data)
 	return data->filednum;
 }
 
-int UpdateProcess_NEW(struct TRIGGER_DATA* data)
+int u_proc(struct TRIGGER_DATA* data)
 {
 		
 		int i=0;
@@ -255,5 +266,4 @@ int UpdateProcess_NEW(struct TRIGGER_DATA* data)
 		printf("^^^^^^^^^^^^^^^^^^^end^^^^^^^^^^^^^^^^^^\n");
 		return data->filednum;
 }
-
 
