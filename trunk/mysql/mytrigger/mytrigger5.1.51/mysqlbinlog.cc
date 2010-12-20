@@ -2104,7 +2104,7 @@ void* TRIGGER_process(void *args) {
 
 	void *hdl=dlopen(mytrigger_so, RTLD_NOW);
 	if(!hdl) {
-		MYLOG("dlopen %s faild", mytrigger_so);
+		MYLOG("dlopen %s faild[%s]", mytrigger_so, dlerror());
 		exit(1);
 	}
 	IFP init_p = (IFP)dlsym(hdl, "init_proc");
