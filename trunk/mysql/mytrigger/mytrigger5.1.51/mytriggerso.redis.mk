@@ -1,11 +1,11 @@
-CC 	= gcc
+CC	= gcc
 IFLAGS =
-CFLAGS = -ggdb
+CFLAGS = -ggdb -fPIC
 PREDEF =
-LDFLAGS = -shared
+LDFLAGS = -ggdb -shared libhiredis.a libconfparser.a
 
-LINK =
-OBJS = mytriggerso.redis.c libhiredis.a
+LINK = 
+OBJS = mytriggerso.redis.o crc32.o
 WARN =
 
 .PHONY: clean
@@ -17,5 +17,5 @@ mytrigger.so: $(OBJS)
 	$(CC) $(IFLAGS) -fPIC -o $@ $(DEBUG) $(OBJS) $(LINK) $(LDFLAGS)
 
 clean:
-	rm -f mytriggerso.redis.o mytrigger.so
+	rm -f mytriggerso.redis.o crc32.o mytrigger.so
 
