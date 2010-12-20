@@ -8,10 +8,11 @@ self-server-id=128
 #mytrigger-info=/tmp/mytrigger.info
 #daemon
 log-file=/var/log/mytri.log
-
-
+redis-port=9736
 #system configure
 base64-output=auto
 verbose
 read-from-remote-server
 to-last-log
+redis-ip=127.0.0.1
+#mytrigger-so=./mytrigger.so

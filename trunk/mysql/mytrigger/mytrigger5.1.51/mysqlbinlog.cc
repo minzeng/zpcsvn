@@ -1125,11 +1125,14 @@ static struct my_option my_long_options[] =
   {"skip-slave-error", 909, "Skip slave sql error",
    &skip_slave_error, &skip_slave_error, 0, GET_BOOL,
    NO_ARG, 0, 0, 0, 0, 0, 0},
-  {"redis-ip", 910, "redis server ip address", &redis_ip, &redis_ip,
+  /*{"redis-ip", 910, "redis server ip address", &redis_ip, &redis_ip,
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
   {"redis-port", 911, "redis server port",
    &redis_port, &redis_port, 0, GET_INT, REQUIRED_ARG,
-   0, 0, 0, 0, 0, 0},
+   0, 0, 0, 0, 0, 0},*/
+  {"redis-conf-file", 912, "redis map configure file", 
+  &redis_conf_file, &redis_conf_file,
+   0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 
 	/*******************************************************************
 	 * zpc add end

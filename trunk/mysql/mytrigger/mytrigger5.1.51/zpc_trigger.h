@@ -11,10 +11,9 @@
 /* for so error message */
 char err_msg[ERR_MSG_LEN + 1];
 
-char *redis_ip = (char*)"127.0.0.1";
-int redis_port = 6379;
+char *redis_conf_file = (char*)"./rmap.conf";
 /* my log */
-static FILE *log_file_p;
+FILE *log_file_p;
 char *log_file = (char*)"./mytrigger.log";
 #define MYLOG(fmt, arg...) \
 	do { \
