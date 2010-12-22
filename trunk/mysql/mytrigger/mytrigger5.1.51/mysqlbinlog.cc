@@ -2101,6 +2101,7 @@ void* TRIGGER_process(void *args) {
 	struct TRIGGER_DATA *td = NULL;
 	typedef int (*IFP)(char*);
 	typedef int (*HFP)(struct TRIGGER_DATA*);
+	int re;
 
 	void *hdl=dlopen(mytrigger_so, RTLD_NOW);
 	if(!hdl) {
@@ -2138,6 +2139,7 @@ void* TRIGGER_process(void *args) {
 		exit(1);
 	}
 	for (;;) {
+		MYLOG("queue size: %ju", qs);
 		/* get data from queue */
 		td = (TRIGGER_DATA *)dequeue();
 		switch (td->ioperate_type) {

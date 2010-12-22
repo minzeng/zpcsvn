@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdarg.h> /* for va_list */
 
 #include "mystruct.h"
 /* redis client lib */
@@ -38,6 +39,8 @@ typedef struct redis_conf {
 	char redis_host[CONF_ITEM_LEN + 1];
 	int redis_port;
 	int redis_db;
+	int retry_times;
+	int retry_interval;
 
 	/* connect redis */
 	redisContext *c;
@@ -118,6 +121,8 @@ load_redis_map_conf(const char *file) {
 			{"redis_field", &rc->redis_field},
 			{"redis_value", &rc->redis_value},
 			{"mod", &rc->mod},
+			{"retry_times", &rc->retry_times},
+			{"retry_interval", &rc->retry_interval},
 			{0, 0}
 		};
 		CONF_STR_CONFIG redis_conf_str_array[] = {
@@ -175,6 +180,57 @@ get_redis_common_conf(char *dbname, char *tbname){
 	return find;
 }
 
+/*
+ * my redisCommand implementation 
+ * contain reconnect mechanism
+ */
+void *myRedisCommand(REDIS_CONF *rcn, const char *format, ...) {
+	va_list ap;
+	void *reply = NULL;
+	int retry_times = 0;
+
+	va_start(ap,format);
+	for(;;) {
+		reply = redisvCommand(rcn->c, format, ap);
+		if (NULL == reply) { /* need reconect */
+			if (rcn->c->err) {
+				MYLOG("execute redisvCommand faild![%s]", rcn->c->errstr);
+			} else {
+				MYLOG("execute redisvCommand faild![unknown error]");
+			}
+			for (;;) {
+				/* Once an error is returned the context cannot be reused 
+				   and you should set up a new connection. */
+				redisFree(rcn->c);
+				rcn->c = NULL;
+				/* reconnect to redis */
+				MYLOG("Reconnect to host:%s, port:%d]", 
+					rcn->redis_host, rcn->redis_port);
+				rcn->c = redisConnect(rcn->redis_host, rcn->redis_port);
+				if (rcn->c->err) {
+					MYLOG("Connection error[%s:%d]: %s\n", 
+					rcn->redis_host, rcn->redis_port, rcn->c->errstr);
+					/* sleep */
+					usleep(rcn->retry_interval);
+					retry_times++;
+					if (retry_times >= rcn->retry_times) {
+						MYLOG("retry %d times, now mytrigger stop!", rcn->retry_times);	
+						exit(3);
+						//return NULL;
+					}
+					continue;
+				} else {
+					break;
+				}
+			}
+		} else {
+			break;
+		}
+	}
+	va_end(ap);
+	return reply;
+}
+
 int
 select_db(REDIS_CONF *rcn) {
 	redisReply *reply;
@@ -182,9 +238,9 @@ select_db(REDIS_CONF *rcn) {
 	/* implement reconnect after */
 	char valbuf[RBUf_LEN];
 	snprintf(valbuf, RBUf_LEN, "%d", rcn->redis_db);
-	reply = redisCommand(rcn->c,"SELECT %s", valbuf);
+	reply = myRedisCommand(rcn, "SELECT %s", valbuf);
 	if (reply->type == REDIS_REPLY_ERROR) {
-		MYLOG("redisCommand error[%s]", reply->str);
+		MYLOG("myRedisCommand error[%s]", reply->str);
 		freeReplyObject(reply);
 		return -1;
 	}
@@ -199,21 +255,38 @@ REDIS_CONF *
 get_redis_server_conf(char *dbname, char *tbname, uint32_t mod){
 	REDIS_CONF *find;
 	REDIS_CONF temp;
+	int retry_times = 0;
+	/* unit is microsecond */
 
 	snprintf(temp.key, 3*CONF_ITEM_LEN + 1, "%s.%s.%u", dbname, tbname, mod);
 	find = RB_FIND(redis_conf_rb, &redis_conf_rb_root, &(temp));
 	if (NULL != find && NULL == find->c) {
 		/* connect to redis */
-		find->c = redisConnect(find->redis_host, find->redis_port);
-		if (find->c->err) {
-			MYLOG("Connection error[%s:%d]: %s\n", 
-			find->redis_host, find->redis_port, find->c->errstr);
-			return NULL;
-		}
-		/* select redis db */
-		if (!select_db(find)) {
-			MYLOG("select redis db faild!");
-			return NULL;
+		for (;;) {
+			/* reconnect to redis */
+			MYLOG("Reconnect to host:%s, port:%d]",
+				find->redis_host, find->redis_port);
+			find->c = redisConnect(find->redis_host, find->redis_port);
+			if (find->c->err) {
+				MYLOG("Connection error[%s:%d]: %s\n", 
+				find->redis_host, find->redis_port, find->c->errstr);
+				/* Once an error is returned the context cannot be reused 
+				and you should set up a new connection. */
+				redisFree(find->c);
+				find->c = NULL;
+				/* sleep */
+				MYLOG("retry_interval: %d", find->retry_interval);
+				usleep(find->retry_interval);
+				retry_times++;
+				if (retry_times >= find->retry_times) {
+					MYLOG("retry %d times, now mytrigger stop!", find->retry_times);	
+					exit(3);
+					//return NULL;
+				}
+				continue;
+			} else {
+				break;
+			}
 		}
 	}
 	return find;
@@ -331,17 +404,17 @@ int recored_position(REDIS_CONF *rcn, struct TRIGGER_DATA* data) {
 
 	snprintf(keybuf, RBUf_LEN, "%s.%s.logname", data->dbname, data->tbname);
 	snprintf(valbuf, RBUf_LEN, "%s", data->logfile);
-	reply = redisCommand(rcn->c,"SET %s %s", keybuf, valbuf);
+	reply = myRedisCommand(rcn, "SET %s %s", keybuf, valbuf);
 	if (reply->type == REDIS_REPLY_ERROR) {
-		MYLOG("redisCommand error[%s]", reply->str);
+		MYLOG("myRedisCommand error[%s]", reply->str);
 	}
 	freeReplyObject(reply);
 
 	snprintf(keybuf, RBUf_LEN, "%s.%s.position", data->dbname, data->tbname);
 	snprintf(valbuf, RBUf_LEN, "%lu", data->log_pos);
-	reply = redisCommand(rcn->c,"SET %s %s", keybuf, valbuf);
+	reply = myRedisCommand(rcn, "SET %s %s", keybuf, valbuf);
 	if (reply->type == REDIS_REPLY_ERROR) {
-		MYLOG("redisCommand error[%s]", reply->str);
+		MYLOG("myRedisCommand error[%s]", reply->str);
 	}
 	freeReplyObject(reply);
 
@@ -393,10 +466,16 @@ i_proc(struct TRIGGER_DATA* data) {
 		return -1;
 	}
 	N = crc % rc->mod;
+	/* get redis server configure, contain connection */
 	rcn = get_redis_server_conf(data->dbname, data->tbname, N);
 	if (NULL == rcn) {
-		MYLOG("redis server configure[%s.%s.%u] not found!",
-			data->dbname, data->tbname, N);
+		//MYLOG("redis server configure[%s.%s.%u] not found!",
+		//	data->dbname, data->tbname, N);
+		return -1;
+	}
+	/* select redis db */
+	if (select_db(rcn)) {
+		MYLOG("select redis db faild!");
 		return -1;
 	}
 
@@ -413,9 +492,9 @@ i_proc(struct TRIGGER_DATA* data) {
 				return -1; /*?*/
 			}
 			/* implement reconnect after */
-			reply = redisCommand(rcn->c,"HSET %s %s %s", rkey, num, buf);
+			reply = myRedisCommand(rcn, "HSET %s %s %b", rkey, num, buf, re);
 			if (reply->type == REDIS_REPLY_ERROR) {
-				MYLOG("redisCommand error[%s]", reply->str);
+				MYLOG("myRedisCommand error[%s]", reply->str);
 			}
 			freeReplyObject(reply);
 		}
@@ -432,9 +511,9 @@ i_proc(struct TRIGGER_DATA* data) {
 			return -1; /*?*/
 		}
 		/* implement reconnect after */
-		reply = redisCommand(rcn->c,"SADD %s %s", rkey, buf);
+		reply = myRedisCommand(rcn, "SADD %s %s", rkey, buf);
 		if (reply->type == REDIS_REPLY_ERROR) {
-			MYLOG("redisCommand error[%s]", reply->str);
+			MYLOG("myRedisCommand error[%s]", reply->str);
 		}
 		freeReplyObject(reply);
 	} else { /* exception */
@@ -493,19 +572,25 @@ d_proc(struct TRIGGER_DATA* data)
 		return -1;
 	}
 	N = crc % rc->mod;
+	/* get redis server configure, contain connection */
 	rcn = get_redis_server_conf(data->dbname, data->tbname, N);
 	if (NULL == rcn) {
-		MYLOG("redis server configure[%s.%s.%u] not found!",
-			data->dbname, data->tbname, N);
+		//MYLOG("redis server configure[%s.%s.%u] not found!",
+		//	data->dbname, data->tbname, N);
+		return -1;
+	}
+	/* select redis db */
+	if (select_db(rcn)) {
+		MYLOG("select redis db faild!");
 		return -1;
 	}
 
 	/* process data */
 	if (!strncmp("row", rc->redis_value_type, sizeof("row") - 1)) { /* row data */
 		/* implement reconnect after */
-		reply = redisCommand(rcn->c,"DEL %s", rkey);
+		reply = myRedisCommand(rcn, "DEL %s", rkey);
 		if (reply->type == REDIS_REPLY_ERROR) {
-			MYLOG("redisCommand error[%s]", reply->str);
+			MYLOG("myRedisCommand error[%s]", reply->str);
 		}
 		freeReplyObject(reply);
 	} else if (!strncmp("list", rc->redis_value_type, sizeof("list") - 1)){ /* row data */
@@ -521,9 +606,9 @@ d_proc(struct TRIGGER_DATA* data)
 			return -1; /*?*/
 		}
 		/* implement reconnect after */
-		reply = redisCommand(rcn->c,"SREM %s %s", rkey, buf);
+		reply = myRedisCommand(rcn, "SREM %s %s", rkey, buf);
 		if (reply->type == REDIS_REPLY_ERROR) {
-			MYLOG("redisCommand error[%s]", reply->str);
+			MYLOG("myRedisCommand error[%s]", reply->str);
 		}
 		freeReplyObject(reply);
 	} else { /* exception */
@@ -581,10 +666,16 @@ u_proc(struct TRIGGER_DATA* data) {
 		return -1;
 	}
 	N = crc % rc->mod;
+	/* get redis server configure, contain connection */
 	rcn = get_redis_server_conf(data->dbname, data->tbname, N);
 	if (NULL == rcn) {
-		MYLOG("redis server configure[%s.%s.%u] not found!",
-			data->dbname, data->tbname, N);
+		//MYLOG("redis server configure[%s.%s.%u] not found!",
+		//	data->dbname, data->tbname, N);
+		return -1;
+	}
+	/* select redis db */
+	if (select_db(rcn)) {
+		MYLOG("select redis db faild!");
 		return -1;
 	}
 
@@ -601,9 +692,9 @@ u_proc(struct TRIGGER_DATA* data) {
 				return -1; /*?*/
 			}
 			/* implement reconnect after */
-			reply = redisCommand(rcn->c,"HSET %s %s %s", rkey, num, buf);
+			reply = myRedisCommand(rcn, "HSET %s %s %s", rkey, num, buf);
 			if (reply->type == REDIS_REPLY_ERROR) {
-				MYLOG("redisCommand error[%s]", reply->str);
+				MYLOG("myRedisCommand error[%s]", reply->str);
 			}
 			freeReplyObject(reply);
 		}
@@ -620,9 +711,9 @@ u_proc(struct TRIGGER_DATA* data) {
 			return -1; /*?*/
 		}
 		/* implement reconnect after */
-		reply = redisCommand(rcn->c,"ZREM %s %s", rkey, buf);
+		reply = myRedisCommand(rcn, "ZREM %s %s", rkey, buf);
 		if (reply->type == REDIS_REPLY_ERROR) {
-			MYLOG("redisCommand error[%s]", reply->str);
+			MYLOG("myRedisCommand error[%s]", reply->str);
 		}
 		freeReplyObject(reply);
 
@@ -632,9 +723,9 @@ u_proc(struct TRIGGER_DATA* data) {
 			return -1; /*?*/
 		}
 		/* implement reconnect after */
-		reply = redisCommand(rcn->c,"SADD %s %s", rkey, buf);
+		reply = myRedisCommand(rcn, "SADD %s %s", rkey, buf);
 		if (reply->type == REDIS_REPLY_ERROR) {
-			MYLOG("redisCommand error[%s]", reply->str);
+			MYLOG("myRedisCommand error[%s]", reply->str);
 		}
 		freeReplyObject(reply);
 	} else { /* exception */
