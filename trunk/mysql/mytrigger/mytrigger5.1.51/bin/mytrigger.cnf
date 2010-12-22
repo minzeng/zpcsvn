@@ -1,0 +1,16 @@
+[mytrigger]
+host=10.73.11.42
+port=3601
+user=redis
+password=redis1a2b3c
+start-position=106
+self-server-id=128
+#mytrigger-info=/tmp/mytrigger.info
+#daemon
+log-file=./mytri.log
+#system configure
+base64-output=auto
+verbose
+read-from-remote-server
+to-last-log
+result-file=/dev/null
