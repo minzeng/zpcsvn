@@ -1130,7 +1130,7 @@ static struct my_option my_long_options[] =
   {"redis-port", 911, "redis server port",
    &redis_port, &redis_port, 0, GET_INT, REQUIRED_ARG,
    0, 0, 0, 0, 0, 0},*/
-  {"redis-conf-file", 912, "redis map configure file", 
+  {"redis-conf-file", 912, "redis map configure file",
   &redis_conf_file, &redis_conf_file,
    0, GET_STR_ALLOC, REQUIRED_ARG, 0, 0, 0, 0, 0, 0},
 

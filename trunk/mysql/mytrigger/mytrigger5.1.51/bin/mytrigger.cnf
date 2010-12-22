@@ -5,9 +5,12 @@ user=redis
 password=redis1a2b3c
 start-position=106
 self-server-id=128
-#mytrigger-info=/tmp/mytrigger.info
-#daemon
+mytrigger-info=./mytrigger.info
 log-file=./mytri.log
+mytrigger-so=./mytrigger.so
+redis-conf-file=./rmap.conf
+#daemon
+
 #system configure
 base64-output=auto
 verbose
