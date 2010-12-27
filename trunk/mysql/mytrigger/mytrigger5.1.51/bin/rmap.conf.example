@@ -5,7 +5,7 @@ mod=1
 [user.user_base.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=0
+redis_db=1
 retry_times=10
 retry_interval=1000000
 
@@ -16,7 +16,7 @@ mod=1
 [user.user_ext.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=1
+redis_db=2
 retry_times=10
 retry_interval=1000000
 
@@ -28,7 +28,7 @@ mod=1
 [user.user_mail_stat.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=2
+redis_db=3
 retry_times=10
 retry_interval=1000000
 
@@ -39,7 +39,7 @@ mod=1
 [user.user_mayfriend.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=3
+redis_db=4
 retry_times=10
 retry_interval=1000000
 
@@ -50,7 +50,7 @@ mod=1
 [user.user_skin.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=4
+redis_db=5
 retry_times=10
 retry_interval=1000000
 
@@ -61,7 +61,7 @@ mod=1
 [user.user_unreg_mail.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=5
+redis_db=6
 retry_times=10
 retry_interval=1000000
 
@@ -72,7 +72,7 @@ mod=1
 [user.school_userinfo.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=6
+redis_db=7
 retry_times=10
 retry_interval=1000000
 
@@ -86,12 +86,12 @@ mod=2
 [attention.attention_19.0]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=1
+redis_db=8
 retry_times=10
 retry_interval=1000000
 [attention.attention_19.1]
 redis_host=127.0.0.1
 redis_port=9736
-redis_db=2
+redis_db=9
 retry_times=10
 retry_interval=1000000
