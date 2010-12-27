@@ -8,7 +8,7 @@ self-server-id=128
 mytrigger-info=./mytrigger.info
 log-file=./mytrigger.log
 mytrigger-so=./mytrigger.so
-redis-conf-file=./rmap.conf
+redis-conf-file=./rmap.conf.example
 #daemon
 
 #system configure
