@@ -6,7 +6,7 @@ password=redis1a2b3c
 start-position=106
 self-server-id=128
 mytrigger-info=./mytrigger.info
-log-file=./mytri.log
+log-file=./mytrigger.log
 mytrigger-so=./mytrigger.so
 redis-conf-file=./rmap.conf
 #daemon

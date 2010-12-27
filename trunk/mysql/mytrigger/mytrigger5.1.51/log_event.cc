@@ -9895,18 +9895,21 @@ st_print_event_info::st_print_event_info()
 
 /* my add row data queue */
 int enqueue(void *e){
-	//printf("enqueue\n");
+	//MYLOG("enqueue\n");
 	struct EVENT_ITEM *item; 
 
 	pthread_mutex_lock(&q_lock);
-	if (qs > EVENT_QUEUE_SIZE) { /* avoid alloc huge memory*/
+	/*if (qs > EVENT_QUEUE_SIZE) {
 		pthread_mutex_unlock(&q_lock);
 		pthread_cond_signal(&qready);
 		return -1;
+	}*/
+	while (qs >= EVENT_QUEUE_SIZE) { /* avoid alloc huge memory*/
+		pthread_cond_wait(&qready, &q_lock);	
 	}
 	item = (struct EVENT_ITEM *)calloc(1, sizeof(struct EVENT_ITEM));
 	if (NULL == item) {
-		fprintf(stderr, "calloc struct EVENT_ITEM faild in enqueue");
+		MYLOG("calloc struct EVENT_ITEM faild in enqueue");
 		return -1;
 	}
 	item->e = e;
@@ -9919,6 +9922,7 @@ int enqueue(void *e){
 
 void *dequeue() {
 	//printf("dequeue\n");
+	//MYLOG("dequeue\n");
 	struct EVENT_ITEM *item;
 	void *e;
 	//lock
@@ -9929,6 +9933,9 @@ void *dequeue() {
 	item = TAILQ_FIRST(&event_q_head);
 	qs--;
 	TAILQ_REMOVE(&event_q_head, item, entries);
+	if (qs < EVENT_QUEUE_SIZE) {
+		pthread_cond_signal(&qready);	
+	}
 	pthread_mutex_unlock(&q_lock);
 	e = item->e;
 	free(item);
