@@ -75,15 +75,15 @@ static my_bool force_opt= 0, short_form= 0, remote_opt= 0;
 static my_bool debug_info_flag, debug_check_flag;
 static my_bool force_if_open_opt= 1;
 static ulonglong offset = 0;
-static const char* host = 0;
-static int port= 0;
+const char* host = 0;
+int port= 0;
 static uint my_end_arg;
 static const char* sock= 0;
 #ifdef HAVE_SMEM
 static char *shared_memory_base_name= 0;
 #endif
-static const char* user = 0;
-static char* pass = 0;
+const char* user = 0;
+char* pass = 0;
 static char *charset= 0;
 
 static uint verbose= 0;
@@ -2139,7 +2139,7 @@ void* TRIGGER_process(void *args) {
 		exit(1);
 	}
 	for (;;) {
-		MYLOG("queue size: %ju", qs);
+		//MYLOG("queue size: %ju", qs);
 		/* get data from queue */
 		td = (TRIGGER_DATA *)dequeue();
 		switch (td->ioperate_type) {
@@ -2192,6 +2192,16 @@ void* TRIGGER_process(void *args) {
 	dlclose(hdl);
 }
 
+void
+echoarg(char *argv[]){
+	int i;
+	for (i = 0; argv[i] != NULL; i++) {
+		printf("argv[%d]: %s\n", i, argv[i]);	
+	}
+}
+
+char **myargv;
+
 int main(int argc, char** argv)
 {
   char **defaults_argv;
@@ -2203,9 +2213,14 @@ int main(int argc, char** argv)
 
   my_init_time(); // for time functions
 
+  myargv = argv;
+  //echoarg(argv);
   if (load_defaults("my", load_default_groups, &argc, &argv))
     exit(1);
   defaults_argv= argv;
+  //echoarg(argv);
+  //echoarg(argv_b);
+
   parse_args(&argc, (char***)&argv);
 
   if (!argc)

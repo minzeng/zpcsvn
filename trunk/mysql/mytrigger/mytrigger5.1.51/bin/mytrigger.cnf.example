@@ -1,5 +1,5 @@
 [mytrigger]
-host=10.73.11.42
+host=10.73.11.40
 port=3601
 user=redis
 password=redis1a2b3c

@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdarg.h> /* for va_list */
+#include <limits.h>
+#include <time.h>
 
 #include "mystruct.h"
 /* redis client lib */
@@ -9,11 +11,25 @@
 #include "tree.h"
 #include "confparser.h"
 
+/*extern from mytrigger daemon */
+extern char *redis_conf_file;
+extern char *conf_file;
+extern const char* host;
+extern const char* user;
+extern char* pass;
+extern ulong self_server_id;
+extern int port;
+extern char **myargv;
+
 /* my log from main program */
 extern FILE *log_file_p;
 #define MYLOG(fmt, arg...) \
-	do { \
-		fprintf(log_file_p, "%s[%d]: "#fmt"\n", __func__, __LINE__, ##arg);\
+	do {  \
+		char *asc_time; time_t timeticks; \
+		timeticks = time(NULL);\
+		asc_time = asctime(localtime(&timeticks)); \
+		asc_time[strlen(asc_time) - 1] = '\0';  /* delete the last '\n' */ \
+		fprintf(log_file_p, "%s[%d]%s: "#fmt"\n", __func__, __LINE__, asc_time, ##arg);\
 		fflush(log_file_p);\
 	}while(0)
 
@@ -220,6 +236,8 @@ void *myRedisCommand(REDIS_CONF *rcn, const char *format, ...) {
 					}
 					continue;
 				} else {
+					/*  restart mytrigger */
+					restart_mytrigger(rcn);
 					break;
 				}
 			}
@@ -229,6 +247,84 @@ void *myRedisCommand(REDIS_CONF *rcn, const char *format, ...) {
 	}
 	va_end(ap);
 	return reply;
+}
+
+/*
+ * confirm logname and position,
+ * restart mytrigger process
+ */
+int
+restart_mytrigger(REDIS_CONF *rcn) {
+	redisReply *reply;
+	char log_name[_POSIX_PATH_MAX + 1];
+	char position[_POSIX_PATH_MAX + 1];
+	pid_t pid;
+
+	MYLOG("restart mytrigger...");
+	/* get logname and position from redis */
+	reply = myRedisCommand(rcn, "SELECT 0");
+	if (reply->type == REDIS_REPLY_ERROR) {
+		MYLOG("myRedisCommand error[%s]", reply->str);
+		MYLOG("mytrigger stop");
+		exit(1);
+	}
+	freeReplyObject(reply);
+	reply = myRedisCommand(rcn, "GET logname");
+	if (reply->type != REDIS_REPLY_STRING) {
+		MYLOG("remove %s file", conf_file);
+		if (remove(conf_file)){
+			MYLOG("remove  %s file faild", conf_file);	
+			MYLOG("mytrigger stop");
+			exit(1);
+		}
+		goto restart;
+	}
+	strlcpy(log_name, reply->str, _POSIX_PATH_MAX + 1);
+	freeReplyObject(reply);
+	reply = myRedisCommand(rcn, "GET position");
+	if (reply->type != REDIS_REPLY_STRING) {
+		MYLOG("remove %s file", conf_file);
+		if (remove(conf_file)){
+			MYLOG("remove  %s file faild", conf_file);	
+			MYLOG("mytrigger stop");
+			exit(1);
+		}
+		goto restart;
+	}
+	strlcpy(position, reply->str, _POSIX_PATH_MAX + 1);
+	freeReplyObject(reply);
+	/* modify mytrigger.info file */
+	char tmp[_POSIX_PATH_MAX];
+	snprintf(tmp, _POSIX_PATH_MAX, "%s.tmp", conf_file);
+	FILE *ft = fopen(tmp, "w");
+	if (NULL == ft) {
+		MYLOG("create tmp mytrigger info file[%s] faild, "
+			"mytrigger exit!", tmp);
+		exit(1);
+	}																		           
+	fprintf(ft, "%s\n", log_name);
+	fprintf(ft, "%s\n", position);
+	fprintf(ft, "%s\n", host);
+	fprintf(ft, "%s\n", user);
+	fprintf(ft, "%s\n", pass);
+	fprintf(ft, "%d\n", port);
+	fprintf(ft, "%ju\n", (uintmax_t)self_server_id);
+	fclose(ft);
+	if (rename(tmp, conf_file) != 0) {
+		MYLOG("rename(%s, %s) faild, mytrigger exit!", tmp, conf_file);
+		exit(1);
+	}
+	/* restart mytrigger */
+restart:
+	pid = fork();
+	if(pid == 0) {
+		execvp(myargv[0], myargv);
+		MYLOG("ERROR: Could not execute %s", myargv[0]);
+	} else {
+		MYLOG("old mytrigger stop");
+		exit(0);
+	}
+	return 0;
 }
 
 int
@@ -313,9 +409,6 @@ enum enum_field_types { MYSQL_TYPE_DECIMAL, MYSQL_TYPE_TINY,
 			MYSQL_TYPE_GEOMETRY=255
 };
 
-/*extern from mytrigger daemon */
-extern char *redis_conf_file;
-
 int
 init_proc(char *err_msg) {
 	int re;
@@ -396,13 +489,23 @@ db_value2string(struct MY_DATA *md, char *buf) {
 	}
 }
 
-int recored_position(REDIS_CONF *rcn, struct TRIGGER_DATA* data) {
+int record_position(REDIS_CONF *rcn, struct TRIGGER_DATA* data) {
 	redisReply *reply;
 	/* implement reconnect after */
 	char keybuf[RBUf_LEN];
 	char valbuf[RBUf_LEN];
 
-	snprintf(keybuf, RBUf_LEN, "%s.%s.logname", data->dbname, data->tbname);
+	if (!data->b_islast) {
+		return 0;	
+	}
+	/* select db0 for record logname and position */
+	reply = myRedisCommand(rcn, "SELECT 0");
+	if (reply->type == REDIS_REPLY_ERROR) {
+		MYLOG("myRedisCommand error[%s]", reply->str);
+	}
+	freeReplyObject(reply);
+
+	snprintf(keybuf, RBUf_LEN, "logname");
 	snprintf(valbuf, RBUf_LEN, "%s", data->logfile);
 	reply = myRedisCommand(rcn, "SET %s %s", keybuf, valbuf);
 	if (reply->type == REDIS_REPLY_ERROR) {
@@ -410,7 +513,7 @@ int recored_position(REDIS_CONF *rcn, struct TRIGGER_DATA* data) {
 	}
 	freeReplyObject(reply);
 
-	snprintf(keybuf, RBUf_LEN, "%s.%s.position", data->dbname, data->tbname);
+	snprintf(keybuf, RBUf_LEN, "position");
 	snprintf(valbuf, RBUf_LEN, "%lu", data->log_pos);
 	reply = myRedisCommand(rcn, "SET %s %s", keybuf, valbuf);
 	if (reply->type == REDIS_REPLY_ERROR) {
@@ -437,8 +540,8 @@ i_proc(struct TRIGGER_DATA* data) {
 	/* get redis common configure from RB-TREE */
 	rc = get_redis_common_conf(data->dbname, data->tbname);
 	if (NULL == rc) {
-		MYLOG("redis common configure[%s.%s.common] not found!",
-			data->dbname, data->tbname);
+		//MYLOG("redis common configure[%s.%s.common] not found!",
+			//data->dbname, data->tbname);
 		return -1;
 	}
 	/* check redis_key */
@@ -521,7 +624,7 @@ i_proc(struct TRIGGER_DATA* data) {
 		return -1;
 	}
 
-	recored_position(rcn, data);
+	record_position(rcn, data);
 
 	return  0;
 }
@@ -543,8 +646,8 @@ d_proc(struct TRIGGER_DATA* data)
 	/* get redis common configure from RB-TREE */
 	rc = get_redis_common_conf(data->dbname, data->tbname);
 	if (NULL == rc) {
-		MYLOG("redis common configure[%s.%s.common] not found!",
-			data->dbname, data->tbname);
+		//MYLOG("redis common configure[%s.%s.common] not found!",
+			//data->dbname, data->tbname);
 		return -1;
 	}
 	/* check redis_key */
@@ -616,7 +719,7 @@ d_proc(struct TRIGGER_DATA* data)
 		return -1;
 	}
 
-	recored_position(rcn, data);
+	record_position(rcn, data);
 
 	return  0;
 }
@@ -637,8 +740,8 @@ u_proc(struct TRIGGER_DATA* data) {
 	/* get redis common configure from RB-TREE */
 	rc = get_redis_common_conf(data->dbname, data->tbname);
 	if (NULL == rc) {
-		MYLOG("redis common configure[%s.%s.common] not found!",
-			data->dbname, data->tbname);
+		//MYLOG("redis common configure[%s.%s.common] not found!",
+		//	data->dbname, data->tbname);
 		return -1;
 	}
 	/* check redis_key */
@@ -733,7 +836,7 @@ u_proc(struct TRIGGER_DATA* data) {
 		return -1;
 	}
 
-	recored_position(rcn, data);
+	record_position(rcn, data);
 
 	return  0;
 }

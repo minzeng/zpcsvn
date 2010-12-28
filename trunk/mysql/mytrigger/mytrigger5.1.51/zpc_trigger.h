@@ -16,11 +16,14 @@ char *redis_conf_file = (char*)"./rmap.conf";
 FILE *log_file_p;
 char *log_file = (char*)"./mytrigger.log";
 #define MYLOG(fmt, arg...) \
-	do { \
-		fprintf(log_file_p, "%s[%d]: "#fmt"\n", __func__, __LINE__, ##arg);\
-		fflush(log_file_p);\
-	}while(0)
-
+	    do {  \
+			        char *asc_time; time_t timeticks; \
+			        timeticks = time(NULL);\
+			        asc_time = asctime(localtime(&timeticks)); \
+			        asc_time[strlen(asc_time) - 1] = '\0';  /* delete the last '\n' */ \
+			        fprintf(log_file_p, "%s[%d]%s: "#fmt"\n", __func__, __LINE__, asc_time, ##arg);\
+			        fflush(log_file_p);\
+			    }while(0)
 #define MYLOG_INIT() do {\
 	if (access(log_file, F_OK)) {\
 		log_file_p = fopen(log_file, "w");\
@@ -53,7 +56,7 @@ int enqueue(void *);
 void *dequeue();
 
 char *conf_file = (char*)"./mytrigger.info";
-static FILE *conf_file_fd;
+FILE *conf_file_fd;
 char current_log_name[_POSIX_PATH_MAX + 1];
 char master_host[_POSIX_PATH_MAX];
 char master_user[_POSIX_PATH_MAX];
