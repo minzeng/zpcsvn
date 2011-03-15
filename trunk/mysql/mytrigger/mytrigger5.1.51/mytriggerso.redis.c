@@ -230,15 +230,15 @@ void *myRedisCommand(REDIS_CONF *rcn, const char *format, ...) {
 					usleep(rcn->retry_interval);
 					retry_times++;
 					if (retry_times >= rcn->retry_times) {
-						MYLOG("retry %d times, now mytrigger stop!", rcn->retry_times);	
-						exit(3);
+						MYLOG("retry %d times, now mytrigger-worker stop!", rcn->retry_times);	
+						exit(1);
 						//return NULL;
 					}
 					continue;
 				} else {
 					/*  restart mytrigger */
 					restart_mytrigger(rcn);
-					break;
+					//break;
 				}
 			}
 		} else {
@@ -260,12 +260,12 @@ restart_mytrigger(REDIS_CONF *rcn) {
 	char position[_POSIX_PATH_MAX + 1];
 	pid_t pid;
 
-	MYLOG("restart mytrigger...");
+	MYLOG("restart mytrigger-worker...");
 	/* get logname and position from redis */
 	reply = myRedisCommand(rcn, "SELECT 0");
 	if (reply->type == REDIS_REPLY_ERROR) {
 		MYLOG("myRedisCommand error[%s]", reply->str);
-		MYLOG("mytrigger stop");
+		MYLOG("mytrigger-worker stop");
 		exit(1);
 	}
 	freeReplyObject(reply);
@@ -274,7 +274,7 @@ restart_mytrigger(REDIS_CONF *rcn) {
 		MYLOG("remove %s file", conf_file);
 		if (remove(conf_file)){
 			MYLOG("remove  %s file faild", conf_file);	
-			MYLOG("mytrigger stop");
+			MYLOG("mytrigger-worker stop");
 			exit(1);
 		}
 		goto restart;
@@ -286,7 +286,7 @@ restart_mytrigger(REDIS_CONF *rcn) {
 		MYLOG("remove %s file", conf_file);
 		if (remove(conf_file)){
 			MYLOG("remove  %s file faild", conf_file);	
-			MYLOG("mytrigger stop");
+			MYLOG("mytrigger-worker stop");
 			exit(1);
 		}
 		goto restart;
@@ -299,7 +299,7 @@ restart_mytrigger(REDIS_CONF *rcn) {
 	FILE *ft = fopen(tmp, "w");
 	if (NULL == ft) {
 		MYLOG("create tmp mytrigger info file[%s] faild, "
-			"mytrigger exit!", tmp);
+			"mytrigger-worker exit!", tmp);
 		exit(1);
 	}																		           
 	fprintf(ft, "%s\n", log_name);
@@ -311,19 +311,20 @@ restart_mytrigger(REDIS_CONF *rcn) {
 	fprintf(ft, "%ju\n", (uintmax_t)self_server_id);
 	fclose(ft);
 	if (rename(tmp, conf_file) != 0) {
-		MYLOG("rename(%s, %s) faild, mytrigger exit!", tmp, conf_file);
+		MYLOG("rename(%s, %s) faild, mytrigger-worker exit!", tmp, conf_file);
 		exit(1);
 	}
 	/* restart mytrigger */
 restart:
-	pid = fork();
+	/*pid = fork();
 	if(pid == 0) {
 		execvp(myargv[0], myargv);
 		MYLOG("ERROR: Could not execute %s", myargv[0]);
 	} else {
 		MYLOG("old mytrigger stop");
 		exit(0);
-	}
+	}*/
+	exit(2);
 	return 0;
 }
 
@@ -374,11 +375,12 @@ get_redis_server_conf(char *dbname, char *tbname, uint32_t mod){
 				MYLOG("retry_interval: %d", find->retry_interval);
 				usleep(find->retry_interval);
 				retry_times++;
-				if (retry_times >= find->retry_times) {
-					MYLOG("retry %d times, now mytrigger stop!", find->retry_times);	
-					exit(3);
+				MYLOG("retry %d times!", retry_times);	
+				//if (retry_times >= find->retry_times) {
+				//	MYLOG("retry %d times, now mytrigger-worker stop!", find->retry_times);	
+				//	exit(1);
 					//return NULL;
-				}
+				//}
 				continue;
 			} else {
 				break;
