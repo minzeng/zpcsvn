@@ -1,13 +1,5 @@
 cdef extern from "mtmod.h" :
     
-    
-    struct QUEUE :
-        pass
-        
-    QUEUE* TAILQ_INIT()
-    MY_DATA* TAILQ_GET(QUEUE*)
-    int TAILQ_DEINIT(QUEUE*)
-    
     struct MY_DATA :
         void* data
         int type
@@ -23,8 +15,6 @@ cdef extern from "mtmod.h" :
         MY_DATA* row_list
         MY_DATA* row_list_update
         int b_islast
-        
-    int TRIGGER_DATA_FREE(TRIGGER_DATA*)
     
     cdef enum CheeseState :
         MYSQL_TYPE_DECIMAL
@@ -55,3 +45,14 @@ cdef extern from "mtmod.h" :
         MYSQL_TYPE_STRING=254
         MYSQL_TYPE_GEOMETRY=255
         
+    
+    
+    struct TRIGGER :
+        pass
+        
+    TRIGGER* TRIGGER_init( void )
+    int TRIGGER_deinit( TRIGGER* )
+    TRIGGER_DATA* TRIGGER_getdata( TRIGGER* )
+    int TRIGGER_freedata( TRIGGER*, TRIGGER_DATA* )
+    int TRIGGER_cleardata( TRIGGER* )
+    

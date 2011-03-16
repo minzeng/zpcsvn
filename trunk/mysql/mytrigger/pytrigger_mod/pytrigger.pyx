@@ -1,4 +1,8 @@
+cimport mytrigger
+from stdlib cimport *
+from time cimport *
 
+import datatime
 import Threading
 
 # MYSQL_TYPE_TINY         TINYINT                char
@@ -123,18 +127,27 @@ cdef class Trigger( object ):
     
     def __cinit__( self ):
         
-        sefl.c_trigger = TRIGGER( )
+        sefl.c_trigger = TRIGGER_init( )
+        
+        return
+        
+    def __dealloc__( self ):
+            
+        TRIGGER_deinit( sefl.c_trigger )
         
         return
     
     def __init__( self ):
-        pass
         
-    def getdata( self ):
+        self.__lock = Threading.Lock()
+        
+    def _process( self ):
         
         cdef mytrigger.TRIGGER_DATA* d
         
-        d = mytrigger.TAILQ_GET( queue )
+        self.__lock.acquire()
+        
+        d = mytrigger.TRIGGER_getdata( sefl.c_trigger )
         
         cdef int j
         
@@ -146,21 +159,33 @@ cdef class Trigger( object ):
         for j from 0 <= j < d.filednum :
             rn.append( datatrans( d.row_list_update+j ) )
         
-        mytrigger.TRIGGER_DATA_FREE( d )
+        try :
+            self.process( rl, rn )
+        finally :
+            mytrigger.TRIGGER_freedata( self.c_trigger, d )
+            self.__lock.release()
+            
+        return
         
-        return rl, rn
+    def _processloop( self ):
         
-    def _process( self ):
-    
         while( True ):
-            self.process( self.getdata() )
+            
+            _process()
+            
+        return
         
     def loop( self ):
     
         t = Threading.thread( Target = self._process )
         
         while( True ):
-            mytrigger.loop( self.queue )
+            if mytrigger.loop( self.queue ) == -1 :
+                self.__lock.acquire()
+                mytrigger.TRIGGER_cleardata( self.c_trigger )
+                self.__lock.release()
+            else :
+                break
         
         t.join()
         
