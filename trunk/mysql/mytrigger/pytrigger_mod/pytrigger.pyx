@@ -117,13 +117,13 @@ cdef object datatrans( mytrigger.MY_DATA* d ):
 
 
 
-cdef class DBOPTIONS( object ):
+cdef class Trigger( object ):
     
-    cdef mytrigger.QUEUE* queue 
+    cdef mytrigger.TRIGGER* c_trigger
     
     def __cinit__( self ):
         
-        self.queue = QUEUE_INIT()
+        sefl.c_trigger = TRIGGER( )
         
         return
     
@@ -134,7 +134,7 @@ cdef class DBOPTIONS( object ):
         
         cdef mytrigger.TRIGGER_DATA* d
         
-        d = mytrigger.QUEUE_GET( queue )
+        d = mytrigger.TAILQ_GET( queue )
         
         cdef int j
         
