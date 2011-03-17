@@ -127,13 +127,13 @@ cdef class Trigger( object ):
     
     def __cinit__( self ):
         
-        sefl.c_trigger = TRIGGER_init( )
+        self.c_trigger = mytrigger.TRIGGER_init( )
         
         return
         
     def __dealloc__( self ):
             
-        TRIGGER_deinit( sefl.c_trigger )
+        mytrigger.TRIGGER_deinit( self.c_trigger )
         
         return
     
@@ -147,7 +147,7 @@ cdef class Trigger( object ):
         
         self.__lock.acquire()
         
-        d = mytrigger.TRIGGER_getdata( sefl.c_trigger )
+        d = mytrigger.TRIGGER_getdata( self.c_trigger )
         
         cdef int j
         
@@ -171,13 +171,13 @@ cdef class Trigger( object ):
         
         while( True ):
             
-            _process()
+            self._process()
             
         return
         
     def loop( self ):
     
-        t = Threading.thread( Target = self._process )
+        t = Threading.thread( Target = self._processloop )
         
         while( True ):
             if mytrigger.loop( self.queue ) == -1 :

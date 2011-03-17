@@ -50,7 +50,7 @@ cdef extern from "mtmod.h" :
     struct TRIGGER :
         pass
         
-    TRIGGER* TRIGGER_init( void )
+    TRIGGER* TRIGGER_init( )
     int TRIGGER_deinit( TRIGGER* )
     TRIGGER_DATA* TRIGGER_getdata( TRIGGER* )
     int TRIGGER_freedata( TRIGGER*, TRIGGER_DATA* )
