@@ -180,7 +180,7 @@ cdef class Trigger( object ):
         t = Threading.thread( Target = self._processloop )
         
         while( True ):
-            if mytrigger.loop( self.queue ) == -1 :
+            if mytrigger.TRIGGER_loop( self.c_trigger ) == -1 :
                 self.__lock.acquire()
                 mytrigger.TRIGGER_cleardata( self.c_trigger )
                 self.__lock.release()

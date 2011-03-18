@@ -55,4 +55,5 @@ cdef extern from "mtmod.h" :
     TRIGGER_DATA* TRIGGER_getdata( TRIGGER* )
     int TRIGGER_freedata( TRIGGER*, TRIGGER_DATA* )
     int TRIGGER_cleardata( TRIGGER* )
+    int TRIGGER_loop( TRIGGER* )
     
