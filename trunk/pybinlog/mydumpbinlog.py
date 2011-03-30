@@ -3,6 +3,7 @@ import struct
 from util import int2byte
 from util import byte2int
 from util import join_bytes
+from myconvert import ConvertIntToString
 
 
 COM_BINLOG_DUMP = 18
@@ -24,6 +25,13 @@ class MyDumpBinLog:
 		self.__socket = conn.socket
 		
 	def start_dump(self,filename,startpos):
+		"""
+#		args = ConvertIntToString(startpos,4)
+#		args = args + ConvertIntToString(0,2)
+#		args = args + ConvertIntToString(1,4)
+#		args = filename
+
+		"""
 		args = pack_int32(startpos)            #start position
         	args = args + pack_int16(0) #binlog flags
         	args = args + pack_int32(1)     #server_id of the slave

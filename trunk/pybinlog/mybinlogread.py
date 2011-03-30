@@ -444,7 +444,7 @@ def ProcessRowEvent(event_dict):
 def OutPutJson(event_type,table_id,rows_data):
 	if event_type == mytypes.ROTATE_EVENT:
 		myjson = {'action':'ROTATE','row':rows_data}
-		print json.write(myjson)
+		print json.dumps(myjson)
 		return
 
 	dbName = tableMap.getDBName(table_id)
@@ -461,7 +461,7 @@ def OutPutJson(event_type,table_id,rows_data):
 			myjson = {'dbname':dbName,'tablename':tableName,'action':'UPDATE'}
 			myjson['row'] = {'old':old_data,'new':new_data}	
 
-	print json.write(myjson)
+	print json.dumps(myjson)
 	
 
 def FormatOutPut(event_type,table_id,rows_data):
