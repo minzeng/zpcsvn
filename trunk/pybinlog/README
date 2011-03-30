@@ -1,0 +1,9 @@
+Example:
+
+python main.py -h192.168.220.128 -ujzb -p123qwe -j4 mysql-bin.000001
+
+
+j:start position
+
+
+
