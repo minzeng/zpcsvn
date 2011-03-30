@@ -366,7 +366,7 @@ def ProcessRowEvent(event_dict):
   		### decode image data
 		###
 		index = 0
-		rows_data = {}
+		rows_data = {} 
 		while len(row_image) != 0:
 			#decode row image data
 			row_image,rows_data[index] = DecodeOneRow(row_image,table_id)
