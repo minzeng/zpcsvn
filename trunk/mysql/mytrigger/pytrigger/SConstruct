@@ -1,7 +1,0 @@
-Program( 
-    'mt',
-    ['pymt.c', 'mttest.c'],
-    LIBS = ['c','python2.5'],
-    LIBPATH = '/usr/local/lib',
-    CPPPATH = ['./', '/usr/local/include','/usr/local/include/python2.5']
-)
